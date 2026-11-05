@@ -62,7 +62,7 @@ def gerar(indicadores, demanda, cfg, ano):
             regras.append(("mutirao_caf", f"Mutirão de inscrição no CAF em {nome}",
                            "Organizar atendimento de inscrição no CAF; sem CAF não há Garantia-Safra nem Pronaf."))
         if ind["classe"] in ("alerta", "critico") and completos > 0:
-            regras.append(("convocacao", f"Convocar {completos} agricultores com documentação completa",
+            regras.append(("convocacao", f"Convocar {completos} agricultores de {nome} com documentação completa",
                            f"Preparar convocação para atendimento em {nome}, sujeita à aprovação do gestor."))
         for tipo, titulo, acao in regras:
             recomendacoes.append(Recomendacao(
@@ -73,7 +73,13 @@ def gerar(indicadores, demanda, cfg, ano):
                 evidencias={**ind, "ano": int(ano), "familias_garantia_safra": familias,
                             "travados_sem_caf": gargalo, "docs_completos": completos},
                 acao_sugerida=acao))
-    return sorted(recomendacoes, key=lambda r: (-r.prioridade, r.cod_ibge, r.tipo))
+    # Mesmo score para as ações de um município; desempate na ordem do processo real:
+    # vistoria (sem laudo não há pagamento) -> mutirão do CAF (destrava pedidos) -> convocação.
+    return sorted(recomendacoes, key=lambda r: (-r.prioridade, r.cod_ibge, ORDEM_TIPOS.get(r.tipo, 9)))
+
+
+ORDEM_TIPOS = {"vistoria": 0, "mutirao_caf": 1, "convocacao": 2}
+ROTULOS_TIPOS = {"vistoria": "Vistoria de perdas", "mutirao_caf": "Mutirão do CAF", "convocacao": "Convocação"}
 
 
 if __name__ == "__main__":

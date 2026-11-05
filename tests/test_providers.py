@@ -140,19 +140,14 @@ class TestFontes(unittest.TestCase):
         self.assertIsNone(rag)
         self.assertIn("RAG indisponível", motivo)
 
-    def test_genai_nao_carrega_env(self):
-        configuracao = Mock()
-        configuracao.load_env = Mock(side_effect=AssertionError("Não ler .env"))
+    def test_genai_cria_assistente_com_caminhos_do_painel(self):
+        # a chave é carregada pelo próprio citizen_rag (ambiente ou .env fora do git); o painel não intercepta
         modulo = Mock()
-        def construir(**kwargs):
-            configuracao.load_env()
-            return Mock(_init_error=None)
-        modulo.RAGAssistant.side_effect = construir
-        with patch("providers.genai.import_module", side_effect=[modulo, configuracao]):
+        modulo.RAGAssistant.return_value = Mock(_init_error=None)
+        with patch("providers.genai.import_module", return_value=modulo):
             rag, motivo = genai.criar_rag()
         self.assertIsNotNone(rag)
-        configuracao.load_env.assert_not_called()
-        self.assertIn("overrides", modulo.RAGAssistant.call_args.kwargs)
+        self.assertIn("index_dir", modulo.RAGAssistant.call_args.kwargs["overrides"]["paths"])
 
 
 if __name__ == "__main__":

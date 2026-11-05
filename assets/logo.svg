@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 72" role="img" aria-labelledby="titulo">
+  <title id="titulo">Mandacaru — um cacto do semiárido</title>
+  <circle cx="47" cy="15" r="10" fill="#D4A744"/>
+  <path d="M32 63V15M32 41H19a9 9 0 0 1-9-9V23M32 49h12a10 10 0 0 0 10-10V31" fill="none" stroke="#176449" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M17 66h30" stroke="#202923" stroke-width="4" stroke-linecap="round"/>
+</svg>

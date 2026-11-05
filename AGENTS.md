@@ -26,7 +26,7 @@ a `citizentech-rpa` (`../RPA`, pedidos triados pelo robô) e `citizentech-genai`
 - Python: `..\.venv\Scripts\python.exe` (Windows). Não instale pacotes novos sem necessidade; se instalar,
   adicione em `requirements.txt`. Disponíveis: streamlit, plotly, matplotlib, pandas, numpy, requests, pyyaml.
 - Dados: clima e mapas reais (Open-Meteo, IBGE); pedidos de agricultores **sintéticos** (marcar como tal).
-  Nenhum dado pessoal real. Nunca leia nem exiba arquivos `.env`.
+  Nenhum dado pessoal real. O agente nunca lê nem exibe `.env`; o código do app carrega a chave normalmente (não desative).
 - Falhas previsíveis (API fora do ar, arquivo ausente) não derrubam o app: snapshot local + aviso na tela.
 
 ## Antes de terminar

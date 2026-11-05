@@ -78,3 +78,22 @@ simulacao:
     aposentadoria_rural: 1
     salario_maternidade_rural: 1
     cpf: 1
+
+# Comportamento da interface e cache da camada Streamlit.
+interface:
+  cache_dados_ttl_s: 3600
+  cache_rede_ttl_s: 900
+  cache_rag_ttl_s: 3600
+  recomendacoes_por_pagina: 5
+  mini_graficos: 3
+  altura_mapa: 480
+  mapa_centro: {lat: -8.1, lon: -39.7}
+  mapa_zoom: 5.1
+  mapa_estilo: carto-positron   # base neutra sem token; "white-bg" para uso offline
+  altura_chuva: 400
+  altura_mini: 230
+  altura_barras: 320
+  limiar_min: 0
+  limiar_max: 100
+  limiar_passo: 5
+  chat_max_caracteres: 1500

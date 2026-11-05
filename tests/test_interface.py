@@ -1,0 +1,238 @@
+"""Fumaça e decisões reais em saídas temporárias, sem rede ou envio."""
+from datetime import date
+from email import policy
+from email.parser import BytesParser
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import Mock, patch
+from threading import RLock
+
+import streamlit as st
+from streamlit.testing.v1 import AppTest
+
+from pipelines import decisoes
+from providers.config import RAIZ, carregar
+from state import dados, store
+from ui.graficos import grafico_chuva
+
+
+class TestInterface(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.cfg = carregar()
+        self.cfg["paths"]["decisoes"] = Path(self.temp.name) / "decisoes.jsonl"
+        self.cfg["paths"]["convocacoes"] = Path(self.temp.name) / "convocacoes"
+        self.patches = [patch("state.dados.CFG", self.cfg),
+                        patch("pipelines.decisoes.carregar", return_value=self.cfg),
+                        patch("state.dados.recurso_rag", return_value=(None, "RAG indisponível; template local.", RLock()))]
+        for recurso in self.patches:
+            recurso.start()
+            self.addCleanup(recurso.stop)
+        st.cache_data.clear()
+        self.addCleanup(st.cache_data.clear)
+
+    def app(self):
+        app = AppTest.from_file(str(RAIZ / "app.py"), default_timeout=30).run()
+        self.sem_excecoes(app)
+        return app
+
+    def sem_excecoes(self, app):
+        self.assertEqual([e.message for e in app.exception], [])
+
+    def aba(self, app, indice):
+        # AppTest ainda representa tabs como Block, sem select(). O valor é
+        # a mesma chave do controle real on_change='rerun' do Streamlit.
+        app.session_state["aba"] = store.ABAS[indice]
+        app.run()
+        self.sem_excecoes(app)
+
+    def registros(self):
+        return decisoes.listar(self.cfg["paths"]["decisoes"])
+
+    def test_percurso_filtros_replay_e_evidencias(self):
+        app = self.app()
+        self.assertEqual(app.selectbox(key="ano").value, self.cfg["safra"]["ano_demo_seca"])
+        self.assertEqual([t.label for t in app.tabs], list(store.ABAS))
+        self.assertTrue(any("Modo demonstração: seca de 2012" in c.value for c in app.caption))
+        self.assertEqual(len(app.get("plotly_chart")), 4)
+        app.slider(key="mes").set_value(3).run()
+        self.assertTrue(any("31/03/2012" in c.value for c in app.caption))
+        app.multiselect(key="ufs").set_value(["PE"])
+        app.selectbox(key="cultura").set_value("feijao")
+        app.selectbox(key="servico").set_value("pronaf")
+        app.slider(key="limiar").set_value(60).run()
+        self.sem_excecoes(app)
+        chave = next(b.key for b in app.button if (b.key or "").startswith("panorama_abrir_"))
+        codigo = int(chave.rsplit("_", 1)[1])
+        app.button(key=chave).click().run()
+        self.sem_excecoes(app)
+        self.assertEqual(app.selectbox(key="_municipio").value, codigo)
+        self.assertEqual(len(app.tabs[1].get("image")), 1)  # Calendário Matplotlib renderizado.
+        app.button(key="municipio_mesa").click().run()
+        self.sem_excecoes(app)
+        self.assertTrue(any("Da evidência à ação" == h.value for h in app.subheader))
+        self.aba(app, 3)
+        self.assertTrue(any("serviço pronaf" in c.value for c in app.caption))
+        self.aba(app, 0)
+        self.assertEqual(app.slider(key="mes").value, 3)
+        self.assertEqual(app.multiselect(key="ufs").value, ["PE"])
+
+    def test_convocacao_exige_revisao_e_salva_edicao(self):
+        app = self.app()
+        self.aba(app, 2)
+        id_rec = next(b.key.removeprefix("aprovar_") for b in app.button
+                      if (b.key or "").startswith("aprovar_convocacao"))
+        app.button(key=f"aprovar_{id_rec}").click().run()
+        self.assertTrue(any("Informe data" in e.value for e in app.error))
+        self.assertEqual(self.registros(), [])
+        app.date_input(key=f"data_{id_rec}").set_value(date.today())
+        app.text_input(key=f"local_{id_rec}").set_value("EMATER municipal, às 9h")
+        app.text_area(key=f"plano_{id_rec}").set_value("Atender em grupos pequenos, com prioridade às pendências.")
+        app.button(key=f"editar_{id_rec}").click().run()
+        self.sem_excecoes(app)
+        self.assertEqual(self.registros(), [])
+        self.assertFalse(self.cfg["paths"]["convocacoes"].exists())
+        self.assertIn("EMATER municipal", app.text_area(key=f"mensagem_{id_rec}").value)
+        app.button(key=f"voltar_{id_rec}").click().run()
+        self.sem_excecoes(app)
+        self.assertEqual(app.date_input(key=f"data_{id_rec}").value, date.today())
+        self.assertEqual(app.text_input(key=f"local_{id_rec}").value, "EMATER municipal, às 9h")
+        app.button(key=f"editar_{id_rec}").click().run()
+        app.button(key=f"confirmar_{id_rec}").click().run()
+        self.assertTrue(any("marque a confirmação" in e.value for e in app.error))
+        self.assertEqual(self.registros(), [])
+        app.checkbox(key=f"revisada_{id_rec}").set_value(True)
+        app.button(key=f"confirmar_{id_rec}").click().run()
+        self.sem_excecoes(app)
+        registros = self.registros()
+        self.assertEqual(len(registros), 1)
+        self.assertEqual(registros[0]["decisao"], "editada")
+        self.assertFalse(any(b.key == f"aprovar_{id_rec}" for b in app.button))
+        self.assertEqual(len(app.dataframe[0].value), 1)
+        arquivo = self.cfg["paths"]["convocacoes"] / f"{id_rec}.eml"
+        mensagem = BytesParser(policy=policy.default).parsebytes(arquivo.read_bytes())
+        self.assertEqual(mensagem["X-Unsent"], "1")
+        self.assertIsNone(mensagem["To"])
+        self.assertIn("EMATER municipal", mensagem.get_content())
+        self.assertIn("CAF", mensagem.get_content())
+        self.aba(app, 0)
+        self.aba(app, 2)
+        self.assertFalse(any(b.key == f"aprovar_{id_rec}" for b in app.button))
+
+    def test_rejeicao_obrigatoria_e_aprovacao_vistoria(self):
+        app = self.app()
+        self.aba(app, 2)
+        id_rec = next(b.key.removeprefix("rejeitar_") for b in app.button if (b.key or "").startswith("rejeitar_vistoria"))
+        app.button(key=f"rejeitar_{id_rec}").click().run()
+        self.assertTrue(any("justificativa é obrigatório" in e.value for e in app.error))
+        self.assertEqual(self.registros(), [])
+        app.text_area(key=f"justificativa_{id_rec}").set_value("Vistoria já realizada pela equipe municipal.")
+        app.button(key=f"rejeitar_{id_rec}").click().run()
+        self.sem_excecoes(app)
+        self.assertEqual(self.registros()[0]["decisao"], "rejeitada")
+        outro = next(b.key.removeprefix("aprovar_") for b in app.button if (b.key or "").startswith("aprovar_vistoria"))
+        app.date_input(key=f"data_{outro}").set_value(date.today())
+        app.text_input(key=f"local_{outro}").set_value("Unidade municipal, às 8h")
+        app.button(key=f"aprovar_{outro}").click().run()
+        self.sem_excecoes(app)
+        self.assertEqual([r["decisao"] for r in self.registros()], ["rejeitada", "aprovada"])
+        self.assertFalse(self.cfg["paths"]["convocacoes"].exists())
+
+    def test_2026_e_recorte_vazio_sao_estados_validos(self):
+        app = self.app()
+        app.selectbox(key="ano").set_value(2026).run()
+        self.aba(app, 2)
+        self.assertTrue(any("Nenhum município atingiu o critério de 40% nesta safra" in s.value for s in app.success))
+        self.assertFalse(any((b.key or "").startswith("aprovar_vistoria") for b in app.button))
+        self.assertEqual(sum((b.key or "").startswith("aprovar_mutirao") for b in app.button), 4)
+        app.selectbox(key="ano").set_value(2013).run()
+        self.sem_excecoes(app)
+        app.multiselect(key="ufs").set_value([]).run()
+        self.sem_excecoes(app)
+        self.assertTrue(any("Escolha ao menos uma UF" in i.value for i in app.info))
+
+    def test_api_falha_preserva_snapshot_e_avisa(self):
+        arquivo = self.cfg["paths"]["clima_diario"]
+        antes = arquivo.read_bytes()
+        app = self.app()
+        app.multiselect(key="ufs").set_value(["SE"]).run()
+        with patch("scripts.preparar_dados.open_meteo.diario", side_effect=OSError("offline")) as diario:
+            next(b for b in app.button if b.label == "Atualizar dados do Open-Meteo").click().run()
+        self.sem_excecoes(app)
+        diario.assert_called_once()
+        self.assertEqual(arquivo.read_bytes(), antes)
+        self.assertTrue(any("último snapshot local" in w.value for w in app.warning))
+
+    def test_chat_com_fontes_e_indisponibilidade(self):
+        app = self.app()
+        self.aba(app, 3)
+        app.button(key="conectar_rag").click().run()
+        self.assertTrue(any("Assistente indisponível" in w.value for w in app.warning))
+        self.assertTrue(app.chat_input[0].disabled)
+        rag = Mock()
+        rag.llm.available = True
+        rag.answer.return_value = {"answer": "Leve o comprovante de CAF [1].", "abstained": False,
+                                  "citations": [{"n": 1, "titulo": "Garantia-Safra", "url": "https://www.gov.br/", "secao": "Documentos"}]}
+        with patch("state.dados.recurso_rag", return_value=(rag, "RAG disponível", RLock())):
+            app.run()
+            app.chat_input[0].set_value("Quais documentos devo levar?").run()
+            self.sem_excecoes(app)
+            self.assertEqual(len(app.chat_message), 2)
+            self.assertEqual(len(app.get("link_button")), 1)
+            app.selectbox(key="servico").set_value("pronaf").run()
+            self.assertEqual(len(app.chat_message), 0)
+            app.chat_input[0].set_value("E para Pronaf?").run()
+        self.assertEqual(rag.answer.call_args.kwargs["service_id"], "pronaf")
+
+    def test_ausencia_de_snapshots_e_eixo_do_criterio(self):
+        with patch("state.dados.dados_locais.malhas", side_effect=FileNotFoundError), \
+                patch("state.dados.rpa.pedidos", side_effect=FileNotFoundError):
+            app = self.app()
+        self.assertTrue(any("Pedidos indisponíveis" in w.value for w in app.warning))
+        self.assertTrue(any("Mapa indisponível" in w.value for w in app.warning))
+        dados.indicadores.clear()
+        dados.contexto.clear()
+        with patch("state.dados.risco.indicadores", side_effect=ValueError("Clima incompleto")):
+            app.run()
+        self.sem_excecoes(app)
+        self.assertTrue(any("Clima incompleto" in w.value for w in app.warning))
+        versao = dados.versao_snapshots()
+        serie = dados.serie(2611101, 2012, versao)
+        ev = dados.evolucao(2012, "milho", versao).query("cod_ibge == 2611101")
+        figura = grafico_chuva(serie, 400, cfg=self.cfg, cultura="milho", limiar=40, evolucao=ev)
+        self.assertEqual(figura.layout.yaxis.title.text, "Acumulado (mm)")
+        self.assertEqual(figura.layout.yaxis2.title.text, "Perda estimada (%)")
+        self.assertEqual(figura.layout.shapes[0].yref, "y2")
+
+    def test_cache_evitar_recalculo_em_rerun_e_mudar_com_cultura(self):
+        with patch("state.dados.risco.indicadores", wraps=dados.risco.indicadores) as indicadores:
+            app = self.app()
+            chamadas = indicadores.call_count
+            self.assertGreater(chamadas, 0)
+            app.run()
+            self.assertEqual(indicadores.call_count, chamadas)
+            app.slider(key="limiar").set_value(60).run()
+            self.assertEqual(indicadores.call_count, chamadas)
+            app.selectbox(key="cultura").set_value("feijao").run()
+            self.assertGreater(indicadores.call_count, chamadas)
+            self.sem_excecoes(app)
+
+    def test_gravacao_recupera_falha_e_impede_duplicidade(self):
+        ctx = dados.contexto(2012, "milho", ("PE",), "todos", 40, dados.versao_snapshots())
+        rec = next(r for r in ctx["recomendacoes"] if r.tipo == "convocacao")
+        with patch("state.dados.decisoes.registrar", side_effect=OSError("disco indisponível")):
+            with self.assertRaises(OSError):
+                dados.salvar_decisao(rec, "aprovada", "Revisado", "Texto revisado", "gestor-demo")
+        self.assertEqual(self.registros(), [])
+        self.assertEqual(list(self.cfg["paths"]["convocacoes"].glob("*.eml")), [])
+        dados.salvar_decisao(rec, "aprovada", "Revisado", "Texto revisado", "gestor-demo")
+        with self.assertRaisesRegex(ValueError, "já foi decidida"):
+            dados.salvar_decisao(rec, "aprovada", "Revisado", "Texto duplicado", "gestor-demo")
+        self.assertEqual(len(self.registros()), 1)
+        self.assertEqual(len(list(self.cfg["paths"]["convocacoes"].glob("*.eml"))), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
