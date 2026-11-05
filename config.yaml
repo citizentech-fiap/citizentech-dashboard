@@ -3,7 +3,7 @@
 paths:
   municipios: data/municipios_semiarido.csv     # 23 municípios (IBGE + coordenadas)
   malhas: data/malhas_municipios.geojson        # polígonos IBGE dos 23 municípios
-  clima_diario: data/clima_diario.csv           # chuva e ET0 diárias por município (Open-Meteo, estações)
+  clima_diario: data/clima_diario.csv           # chuva e ET0 diárias por município (Open-Meteo, reanálise)
   climatologia: data/climatologia.csv           # normal 1991–2020 por município e dia do ano
   pedidos_snapshot: data/pedidos_safra.csv      # pedidos de uma safra simulada (mesmo formato do robô)
   rpa_controle: ../RPA/output/controle.xlsx     # planilha viva do robô (fonte "rpa")
@@ -16,6 +16,8 @@ fontes:
   pedidos: snapshot          # snapshot (safra simulada) | rpa (planilha viva do robô)
   timeout_s: 30
   retries: 3
+  backoff_s: 2               # espera exponencial entre tentativas HTTP
+  intervalo_normal_s: 15     # consultas de 30 anos têm maior custo no limite Open-Meteo
 
 safra:
   inicio_mes_dia: "01-01"    # estação chuvosa do sertão: janeiro a junho
@@ -49,3 +51,28 @@ risco:
 recomendacoes:
   min_pedidos_mutirao: 10          # mutirão de CAF só se houver pelo menos N pedidos travados por falta de CAF
   pesos_prioridade: {risco: 0.5, familias: 0.3, gargalo: 0.2}
+
+# Exclusivamente para a demonstração: nenhum pedido representa pessoa real.
+simulacao:
+  seed: 42
+  pedidos_por_ano: 1000
+  peso_volume_base: 1.0
+  peso_volume_perda: 3.0
+  prob_sem_caf: 0.33
+  prob_outro_doc_faltante: 0.18
+  prob_doc_ilegivel: 0.05
+  prob_revisao_adicional: 0.08
+  confianca_min: 0.70
+  confianca_max: 0.99
+  # Peso final dos três primeiros serviços cresce proporcionalmente à perda.
+  incremento_servicos_seca: 2.0
+  pesos_servicos:
+    garantia_safra: 4
+    caf: 2
+    pronaf: 2
+    cadunico: 1
+    bolsa_familia: 1
+    bpc: 1
+    aposentadoria_rural: 1
+    salario_maternidade_rural: 1
+    cpf: 1
