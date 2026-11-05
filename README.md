@@ -1,5 +1,14 @@
 # CitizenTech — Painel de decisão (Front-end e Mobile Development em Sistemas de IA)
 
+Global Solution · FIAP · Front-end e Mobile Development em Sistemas de IA · Turma 2TIAPF
+
+## Integrantes
+| Nome completo | RM |
+|---|---|
+| Luís Fernando de Oliveira Salgado | RM561401 |
+| Ricardo de Paiva Melo | RM565522 |
+| Jonas Alaf | RM566479 |
+
 > Em construção. Estrutura de camadas exigida pela disciplina:
 
 | Pasta | Responsabilidade |
