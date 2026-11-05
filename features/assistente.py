@@ -22,14 +22,15 @@ def _fontes(citacoes):
 
 
 def renderizar(ctx, cfg, filtros):
-    st.subheader("Orientação com evidências")
+    st.subheader("Tire dúvidas sobre o atendimento")
     st.write("Consulte documentos e regras dos serviços antes de orientar o atendimento.")
     st.caption(f"Contexto: safra {filtros['ano']} · {filtros['cultura']} · UFs {', '.join(filtros['ufs'])} · "
-               f"serviço {filtros['servico'].replace('_', ' ')} · limiar {filtros['limiar']}%.")
-    st.info("O assistente consulta a base documental do genAI. O clima e os pedidos não fazem parte dessa base; use o panorama e o raio-x para decidir onde agir. Não informe dados pessoais.")
+               f"serviço {filtros['servico'].replace('_', ' ')}.")
+    st.caption("Consulte regras e documentos dos serviços. Para decidir onde agir, use as etapas 1 e 2. Não informe dados pessoais.")
+    exemplo = "Quais documentos levar para o Garantia-Safra?"
+    st.button(exemplo, key="exemplo_pergunta", on_click=store.enviar_exemplo, args=(exemplo,))
     if not store.obter("rag_ativado"):
-        st.caption("Ex.: Quais documentos levar ao atendimento do Garantia-Safra?")
-        st.button("Conectar assistente", key="conectar_rag", type="primary", on_click=store.definir,
+        st.button("Ativar assistente (leva uns 20 s na primeira vez)", key="conectar_rag", type="primary", on_click=store.definir,
                   args=("rag_ativado", True))
         return
     with st.spinner("Preparando a base de fontes do assistente…"):
@@ -46,6 +47,10 @@ def renderizar(ctx, cfg, filtros):
             _fontes(mensagem.get("citations", []))
     pergunta = st.chat_input("Pergunte sobre o serviço selecionado…", disabled=indisponivel,
                              max_chars=cfg["interface"]["chat_max_caracteres"])
+    pergunta_exemplo = store.obter("pergunta_exemplo")
+    store.definir("pergunta_exemplo", None)
+    if pergunta_exemplo and not indisponivel:
+        pergunta = pergunta_exemplo
     if pergunta:
         store.adicionar_mensagem(contexto, {"role": "user", "content": pergunta})
         with st.chat_message("user"):

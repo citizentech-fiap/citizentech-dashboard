@@ -15,6 +15,7 @@ from pipelines import decisoes
 from providers.config import RAIZ, carregar
 from state import dados, store
 from ui.graficos import grafico_chuva
+from ui.acoes import sugestao
 
 
 class TestInterface(unittest.TestCase):
@@ -55,7 +56,11 @@ class TestInterface(unittest.TestCase):
         app = self.app()
         self.assertEqual(app.selectbox(key="ano").value, self.cfg["safra"]["ano_demo_seca"])
         self.assertEqual([t.label for t in app.tabs], list(store.ABAS))
-        self.assertTrue(any("Modo demonstração: seca de 2012" in c.value for c in app.caption))
+        self.assertEqual(app.title[0].value, "Onde agir primeiro?")
+        self.assertTrue(any("seca histórica, modo demonstração" in c.value for c in app.markdown))
+        self.assertTrue(any("Veja onde a seca está pior" in c.value for c in app.caption))
+        self.assertFalse(next(e for e in app.expander if e.label == "Ajustes avançados").proto.expanded)
+        self.assertFalse(next(e for e in app.expander if e.label == "Como calculamos").proto.expanded)
         self.assertEqual(len(app.get("plotly_chart")), 4)
         app.slider(key="mes").set_value(3).run()
         self.assertTrue(any("31/03/2012" in c.value for c in app.caption))
@@ -70,9 +75,10 @@ class TestInterface(unittest.TestCase):
         self.sem_excecoes(app)
         self.assertEqual(app.selectbox(key="_municipio").value, codigo)
         self.assertEqual(len(app.tabs[1].get("image")), 1)  # Calendário Matplotlib renderizado.
-        app.button(key="municipio_mesa").click().run()
+        self.assertTrue(any("O que fazer em " in h.value for h in app.subheader))
+        self.aba(app, 2)
         self.sem_excecoes(app)
-        self.assertTrue(any("Da evidência à ação" == h.value for h in app.subheader))
+        self.assertTrue(any("ações aguardando sua decisão" in h.value for h in app.subheader))
         self.aba(app, 3)
         self.assertTrue(any("serviço pronaf" in c.value for c in app.caption))
         self.aba(app, 0)
@@ -85,12 +91,19 @@ class TestInterface(unittest.TestCase):
         id_rec = next(b.key.removeprefix("aprovar_") for b in app.button
                       if (b.key or "").startswith("aprovar_convocacao"))
         app.button(key=f"aprovar_{id_rec}").click().run()
-        self.assertTrue(any("Informe data" in e.value for e in app.error))
+        self.sem_excecoes(app)
         self.assertEqual(self.registros(), [])
+        self.assertFalse(self.cfg["paths"]["convocacoes"].exists())
+        self.assertIn("Sede da EMATER", app.text_area(key=f"mensagem_{id_rec}").value)
+        app.button(key=f"confirmar_{id_rec}").click().run()
+        self.assertTrue(any("marque a confirmação" in e.value for e in app.error))
+        app.button(key=f"voltar_{id_rec}").click().run()
+        self.assertIsNotNone(app.date_input(key=f"data_{id_rec}").value)
+        self.assertTrue(app.text_area(key=f"plano_{id_rec}").value)
         app.date_input(key=f"data_{id_rec}").set_value(date.today())
         app.text_input(key=f"local_{id_rec}").set_value("EMATER municipal, às 9h")
         app.text_area(key=f"plano_{id_rec}").set_value("Atender em grupos pequenos, com prioridade às pendências.")
-        app.button(key=f"editar_{id_rec}").click().run()
+        app.button(key=f"salvar_ajuste_{id_rec}").click().run()
         self.sem_excecoes(app)
         self.assertEqual(self.registros(), [])
         self.assertFalse(self.cfg["paths"]["convocacoes"].exists())
@@ -99,7 +112,7 @@ class TestInterface(unittest.TestCase):
         self.sem_excecoes(app)
         self.assertEqual(app.date_input(key=f"data_{id_rec}").value, date.today())
         self.assertEqual(app.text_input(key=f"local_{id_rec}").value, "EMATER municipal, às 9h")
-        app.button(key=f"editar_{id_rec}").click().run()
+        app.button(key=f"salvar_ajuste_{id_rec}").click().run()
         app.button(key=f"confirmar_{id_rec}").click().run()
         self.assertTrue(any("marque a confirmação" in e.value for e in app.error))
         self.assertEqual(self.registros(), [])
@@ -121,28 +134,93 @@ class TestInterface(unittest.TestCase):
         self.aba(app, 2)
         self.assertFalse(any(b.key == f"aprovar_{id_rec}" for b in app.button))
 
-    def test_rejeicao_obrigatoria_e_aprovacao_vistoria(self):
+    def test_recusa_sem_motivo_bloqueada(self):
         app = self.app()
         self.aba(app, 2)
-        id_rec = next(b.key.removeprefix("rejeitar_") for b in app.button if (b.key or "").startswith("rejeitar_vistoria"))
-        app.button(key=f"rejeitar_{id_rec}").click().run()
-        self.assertTrue(any("justificativa é obrigatório" in e.value for e in app.error))
+        id_rec = next(b.key.removeprefix("recusar_") for b in app.button if (b.key or "").startswith("recusar_vistoria"))
+        app.button(key=f"recusar_{id_rec}").click().run()
+        app.button(key=f"confirmar_recusa_{id_rec}").click().run()
+        self.assertTrue(any("motivo é obrigatório" in e.value for e in app.error))
         self.assertEqual(self.registros(), [])
-        app.text_area(key=f"justificativa_{id_rec}").set_value("Vistoria já realizada pela equipe municipal.")
-        app.button(key=f"rejeitar_{id_rec}").click().run()
+        app.text_area(key=f"motivo_{id_rec}").set_value("Vistoria já realizada pela equipe municipal.")
+        app.button(key=f"confirmar_recusa_{id_rec}").click().run()
         self.sem_excecoes(app)
         self.assertEqual(self.registros()[0]["decisao"], "rejeitada")
-        outro = next(b.key.removeprefix("aprovar_") for b in app.button if (b.key or "").startswith("aprovar_vistoria"))
-        app.date_input(key=f"data_{outro}").set_value(date.today())
-        app.text_input(key=f"local_{outro}").set_value("Unidade municipal, às 8h")
-        app.button(key=f"aprovar_{outro}").click().run()
+        self.assertFalse(any(b.key == f"aprovar_{id_rec}" for b in app.button))
+
+    def test_jornada_dois_cliques_aprova_vistoria_e_audita(self):
+        app = self.app()
+        primeiro = next(b for b in app.button if b.label == "Ver por quê →")
+        codigo = int(primeiro.key.rsplit("_", 1)[1])
+        primeiro.click().run()  # clique 1: abre a aba 2 no município escolhido
         self.sem_excecoes(app)
-        self.assertEqual([r["decisao"] for r in self.registros()], ["rejeitada", "aprovada"])
+        self.assertEqual(app.session_state["aba"], store.ABAS[1])
+        self.assertEqual(app.selectbox(key="_municipio").value, codigo)
+        id_rec = f"vistoria-{codigo}-2012"
+        self.assertEqual(len(app.date_input), 0)  # aprovação não exige preencher campos
+        app.button(key=f"aprovar_{id_rec}").click().run()  # clique 2: decide
+        self.sem_excecoes(app)
+        self.assertEqual(len(self.registros()), 1)
+        registro = self.registros()[0]
+        self.assertEqual(registro["id"], id_rec)
+        self.assertEqual(registro["decisao"], "aprovada")
+        self.assertEqual(registro["usuario"], self.cfg["decisoes"]["usuario_padrao"])
+        self.assertIn("Sede da EMATER", registro["mensagem"])
+        self.assertIn("Plano:", registro["mensagem"])
+        self.assertEqual(len(self.cfg["paths"]["decisoes"].read_text(encoding="utf-8").splitlines()), 1)
+        self.assertFalse(any(b.key == f"aprovar_{id_rec}" for b in app.button))
+        self.assertEqual(len(app.get("toast")), 1)
         self.assertFalse(self.cfg["paths"]["convocacoes"].exists())
+        self.aba(app, 2)
+        self.assertFalse(any(b.key == f"aprovar_{id_rec}" for b in app.button))
+        self.assertEqual(len(app.dataframe[0].value), 1)
+        self.assertFalse(next(e for e in app.expander if e.label == "Decisões já tomadas").proto.expanded)
+
+    def test_ajustar_mantem_sugestao_e_registra_edicao(self):
+        app = self.app()
+        self.aba(app, 2)
+        id_rec = next(b.key.removeprefix("ajustar_") for b in app.button if (b.key or "").startswith("ajustar_vistoria"))
+        app.button(key=f"ajustar_{id_rec}").click().run()
+        sugerida = app.date_input(key=f"data_{id_rec}").value
+        self.assertEqual(sugerida.weekday(), 0)
+        self.assertGreaterEqual(sugerida, date.today())
+        self.assertTrue(app.text_input(key=f"local_{id_rec}").value.startswith("Sede da EMATER de "))
+        self.assertTrue(app.text_area(key=f"plano_{id_rec}").value)
+        app.run()
+        self.assertEqual(app.date_input(key=f"data_{id_rec}").value, sugerida)
+        app.text_input(key=f"local_{id_rec}").set_value("Unidade municipal, às 8h")
+        app.button(key=f"salvar_ajuste_{id_rec}").click().run()
+        self.sem_excecoes(app)
+        self.assertEqual(self.registros()[0]["decisao"], "editada")
+        self.assertIn("Unidade municipal", self.registros()[0]["mensagem"])
+
+    def test_sugestao_proxima_segunda_inclui_hoje(self):
+        rec = Mock(municipio="Salgueiro", acao_sugerida="Solicitar vistoria.")
+        for hoje in (date(2026, 11, 5), date(2026, 11, 8), date(2026, 11, 9)):
+            with self.subTest(hoje=hoje), patch("ui.acoes.date") as calendario:
+                calendario.today.return_value = hoje
+                self.assertEqual(sugestao(rec, self.cfg)["data"], date(2026, 11, 9))
+
+    def test_fila_cinco_mais_cinco_e_contador(self):
+        app = self.app()
+        self.aba(app, 2)
+        quantidade = len(dados.contexto(2012, "milho", tuple(app.multiselect(key="ufs").value),
+                                       "todos", 40, dados.versao_snapshots())["recomendacoes"])
+        self.assertEqual(sum((b.key or "").startswith("aprovar_") for b in app.button), 5)
+        self.assertFalse(any(s.label == "Página de recomendações" for s in app.selectbox))
+        self.assertFalse(any(t.key == "gestor" for t in app.text_input))
+        app.button(key="mostrar_mais").click().run()
+        self.assertEqual(sum((b.key or "").startswith("aprovar_") for b in app.button), 10)
+        id_rec = next(b.key.removeprefix("aprovar_") for b in app.button if (b.key or "").startswith("aprovar_vistoria"))
+        app.button(key=f"aprovar_{id_rec}").click().run()
+        self.assertTrue(app.subheader[0].value.startswith(f"{quantidade - 1} ações"))
+        app.selectbox(key="ano").set_value(2013).run()
+        self.assertEqual(sum((b.key or "").startswith("aprovar_") for b in app.button), 5)
 
     def test_2026_e_recorte_vazio_sao_estados_validos(self):
         app = self.app()
         app.selectbox(key="ano").set_value(2026).run()
+        self.assertTrue(any("nenhum município precisa de vistoria" in m.value for m in app.markdown))
         self.aba(app, 2)
         self.assertTrue(any("Nenhum município atingiu o critério de 40% nesta safra" in s.value for s in app.success))
         self.assertFalse(any((b.key or "").startswith("aprovar_vistoria") for b in app.button))
@@ -163,7 +241,7 @@ class TestInterface(unittest.TestCase):
         self.sem_excecoes(app)
         diario.assert_called_once()
         self.assertEqual(arquivo.read_bytes(), antes)
-        self.assertTrue(any("último snapshot local" in w.value for w in app.warning))
+        self.assertTrue(any("últimos dados locais" in w.value for w in app.warning))
 
     def test_chat_com_fontes_e_indisponibilidade(self):
         app = self.app()
@@ -177,8 +255,9 @@ class TestInterface(unittest.TestCase):
                                   "citations": [{"n": 1, "titulo": "Garantia-Safra", "url": "https://www.gov.br/", "secao": "Documentos"}]}
         with patch("state.dados.recurso_rag", return_value=(rag, "RAG disponível", RLock())):
             app.run()
-            app.chat_input[0].set_value("Quais documentos devo levar?").run()
+            app.button(key="exemplo_pergunta").click().run()
             self.sem_excecoes(app)
+            self.assertEqual(rag.answer.call_args.args[0], "Quais documentos levar para o Garantia-Safra?")
             self.assertEqual(len(app.chat_message), 2)
             self.assertEqual(len(app.get("link_button")), 1)
             app.selectbox(key="servico").set_value("pronaf").run()

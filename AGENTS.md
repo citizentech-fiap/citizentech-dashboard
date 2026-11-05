@@ -29,6 +29,8 @@ a `citizentech-rpa` (`../RPA`, pedidos triados pelo robô) e `citizentech-genai`
   Nenhum dado pessoal real. O agente nunca lê nem exibe `.env`; o código do app carrega a chave normalmente (não desative).
 - Falhas previsíveis (API fora do ar, arquivo ausente) não derrubam o app: snapshot local + aviso na tela.
 
+- Grave **todos** os arquivos em UTF-8. No PowerShell nunca use `Set-Content`/`Out-File` sem `-Encoding utf8` (o padrão é ANSI e troca acentos por "?"); prefira o editor/patch.
+
 ## Antes de terminar
 - `..\.venv\Scripts\python -m unittest discover -s tests -q` (todos passam).
 - Mexa só nos arquivos que a tarefa pede. Não faça commit nem push.

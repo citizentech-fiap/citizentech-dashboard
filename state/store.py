@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import streamlit as st
 
-ABAS = ("Panorama da seca", "Raio-x do município", "Mesa de decisão", "Assistente")
+ABAS = ("1 · Onde está pior", "2 · Por quê", "3 · O que fazer", "Tirar dúvidas")
 
 
 def obter(chave, padrao=None):
@@ -22,6 +22,8 @@ def iniciar(cfg, ufs):
         "mes": int(cfg["safra"]["fim_mes_dia"][:2]), "aba": ABAS[0],
         "municipio": None, "rascunhos": {}, "conversas": {}, "rag_ativado": False,
         "aviso_atualizacao": None, "notificacao": None,
+        "acoes_visiveis": cfg["interface"]["recomendacoes_por_pagina"],
+        "formularios": {}, "contexto_decisao": None, "pergunta_exemplo": None,
     }
     for chave, valor in defaults.items():
         if chave not in st.session_state:
@@ -42,6 +44,32 @@ def abrir_municipio(codigo):
 
 def selecionar_municipio():
     definir("municipio", obter("_municipio"))
+
+
+def formulario(id_rec, valor=None):
+    formularios = dict(obter("formularios", {}))
+    if valor is not None:
+        formularios[id_rec] = valor
+        definir("formularios", formularios)
+    return formularios.get(id_rec)
+
+
+def preparar_decisoes(filtros, cfg):
+    contexto = tuple((k, tuple(v) if isinstance(v, list) else v) for k, v in filtros.items())
+    if obter("contexto_decisao") != contexto:
+        definir("contexto_decisao", contexto)
+        definir("formularios", {})
+        definir("rascunhos", {})
+        definir("acoes_visiveis", cfg["interface"]["recomendacoes_por_pagina"])
+
+
+def mostrar_mais(quantidade):
+    definir("acoes_visiveis", obter("acoes_visiveis") + quantidade)
+
+
+def enviar_exemplo(pergunta):
+    definir("rag_ativado", True)
+    definir("pergunta_exemplo", pergunta)
 
 
 def guardar_rascunho(id_rec, valor):

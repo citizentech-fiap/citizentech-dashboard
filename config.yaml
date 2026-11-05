@@ -54,6 +54,11 @@ recomendacoes:
   min_pedidos_mutirao: 10          # mutirão de CAF só se houver pelo menos N pedidos travados por falta de CAF
   pesos_prioridade: {risco: 0.5, familias: 0.3, gargalo: 0.2}
 
+decisoes:
+  usuario_padrao: coordenacao
+  dia_semana_sugerido: 0          # segunda-feira; inclui hoje se já for segunda
+  local_sugerido: "Sede da EMATER de {municipio}, 8h"
+
 # Exclusivamente para a demonstração: nenhum pedido representa pessoa real.
 simulacao:
   seed: 42
@@ -91,8 +96,8 @@ interface:
   mapa_zoom: 5.1
   mapa_estilo: carto-positron   # base neutra sem token; "white-bg" para uso offline
   altura_chuva: 400
-  altura_mini: 230
-  altura_barras: 320
+  altura_mini: 150
+  altura_barras: 230
   limiar_min: 0
   limiar_max: 100
   limiar_passo: 5

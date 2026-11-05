@@ -31,7 +31,7 @@ def mapa_perdas(quadro, malhas, cfg, altura):
         hover_name="municipio", hover_data={"cod_ibge": False, "risco": True,
             "perda_estimada_pct": ":.1f", "chuva_mm": ":.0f", "normal_mm": ":.0f", "pedidos": True},
         labels={"perda_estimada_pct": "Perda estimada (%)", "chuva_mm": "Chuva (mm)",
-                "normal_mm": "Normal (mm)", "pedidos": "Pedidos (recorte)", "risco": "Classe"},
+                "normal_mm": "Normal (mm)", "pedidos": "Pedidos", "risco": "Classe"},
         # base cartográfica neutra (CARTO Positron, sem token): estados, litoral e cidades em cinza claro,
         # para que só a escala de risco tenha cor; sem internet o Plotly cai para fundo branco.
         map_style=cfg["interface"].get("mapa_estilo", "carto-positron"), zoom=cfg["interface"]["mapa_zoom"],
@@ -55,7 +55,7 @@ def grafico_chuva(serie, altura, compacto=False, *, cfg, cultura, limiar, evoluc
                             line=dict(width=0), showlegend=False, hoverinfo="skip"))
     fig.add_trace(go.Scatter(x=serie.data, y=np.maximum(etc_ano, etc_normal), mode="lines",
                             fill="tonexty", fillcolor="rgba(87,99,90,.13)", line=dict(width=0),
-                            name="ET da cultura · ano/normal", hovertemplate="ETc: %{y:.0f} mm<extra></extra>"))
+                            name="Água necessária · ano/normal", hovertemplate="Água necessária: %{y:.0f} mm<extra></extra>"))
     fig.add_trace(go.Scatter(x=serie.data, y=serie.normal_acum, mode="lines", name="Chuva normal",
                             line=dict(color=CORES["muted"], dash="dash", width=2)))
     fig.add_trace(go.Scatter(x=serie.data, y=serie.chuva_acum, mode="lines", name="Chuva da safra",

@@ -8,7 +8,7 @@ Global Solution 2026 · FIAP · **Front-end e Mobile Development em Sistemas de 
 | Ricardo de Paiva Melo | RM565522 |
 | Jonas Alaf | RM566479 |
 
-![Panorama da seca de 2012](docs/img/panorama.jpg)
+![Onde está pior: a seca de 2012](docs/img/tutorial/02-mapa-comece-por-aqui.jpg)
 
 ## O problema
 
@@ -97,21 +97,27 @@ flowchart LR
 `providers/` e `pipelines/` não importam Streamlit: rodam e são testados sem a interface
 (`python -m pipelines.risco`, `python -m pipelines.recomendacoes`).
 
-## As telas
+## Como usar (sem treinamento)
 
-1. **Panorama da seca** — mapa dos 23 municípios colorido pela perda estimada, com **replay mês a mês** da safra;
-   cartões de resumo; "comece por aqui" com os municípios mais críticos e mini-gráficos de chuva.
-2. **Raio-x do município** — chuva acumulada × normal, demanda de água da cultura e linha do critério de 40%;
-   calendário dos dias secos (Matplotlib); pedidos por serviço e **documento que mais trava** os agricultores.
-3. **Mesa de decisão** — recomendações priorizadas (risco × famílias × gargalo do CAF), na ordem do processo real:
-   vistoria → mutirão do CAF → convocação. O gestor **aprova** (com data, local e plano), **edita** ou **rejeita**
-   (justificativa obrigatória). Convocações aprovadas geram rascunho de mensagem (RAG ou template) que o gestor
-   revisa; tudo vai para um registro de auditoria.
-4. **Assistente** — chat com o RAG sobre as regras dos serviços, com fontes; carrega sob demanda.
+O painel foi desenhado para quem nunca o viu: as abas são os passos, e a decisão principal leva **2 cliques**.
+**Tutorial completo, tela por tela, com prints: [docs/tutorial.md](docs/tutorial.md).**
 
-| Raio-x do município | Mesa de decisão |
+1. **"1 · Onde está pior"** — o mapa mostra a perda estimada por município; ao lado, "Comece por aqui" lista os 3
+   mais críticos. O slider "Reveja a safra mês a mês" mostra a seca avançando. Clique **"Ver por quê →"**.
+2. **"2 · Por quê"** — já aberto no município: quanto choveu × o normal, quantos dias sem chuva, a água que a
+   plantação precisava e qual documento mais trava os agricultores. No fim, **"O que fazer em {município}"**.
+3. **"3 · O que fazer"** — as 5 ações mais urgentes, na ordem do processo real (vistoria → mutirão do CAF →
+   convocação). Cada cartão já mostra a sugestão (data, local e plano): **Aprovar** é 1 clique; **Ajustar** abre o
+   formulário preenchido; **Recusar** exige o motivo. Convocações mostram a mensagem ao agricultor para revisão
+   antes de confirmar. Tudo vai para um registro de auditoria ("Decisões já tomadas").
+4. **"Tirar dúvidas"** — chat com o assistente RAG sobre as regras dos serviços, com fontes.
+
+Na barra lateral ficam só **Safra** e **Estados**; cultura, limiar, serviço e atualização dos dados estão em
+"Ajustes avançados". O método fica em "Como calculamos". O layout funciona também na largura de celular.
+
+| Por quê (município) | O que fazer |
 |---|---|
-| ![Raio-x](docs/img/raio-x.jpg) | ![Mesa de decisão](docs/img/mesa-de-decisao.jpg) |
+| ![Por quê](docs/img/tutorial/05-por-que-chuva.jpg) | ![O que fazer](docs/img/tutorial/07-o-que-fazer-no-municipio.jpg) |
 
 ## Requisitos da disciplina
 
@@ -120,13 +126,13 @@ flowchart LR
 | `session_state` centralizado | `state/store.py` (`iniciar`, `obter`, `definir`, callbacks) |
 | `st.cache_data` / `st.cache_resource` | `state/dados.py` — indicadores, séries e pedidos por filtro; RAG como recurso |
 | Arquitetura em camadas | `providers/`, `pipelines/`, `features/`, `state/`, `ui/` + `app.py` fino |
-| ≥ 3 filtros | sidebar: UF, safra/ano, cultura, limiar de alerta, serviço; + mês do replay |
+| ≥ 3 filtros | `ui/sidebar.py`: safra e estados à vista; cultura, limiar de alerta e serviço em "Ajustes avançados"; + mês do replay |
 | ≥ 2 gráficos, ≥ 1 Plotly | mapa coroplético, curva de chuva, barras de serviços e documentos (Plotly); calendário seco (Matplotlib) |
-| Componentização real | `ui/graficos.py:grafico_chuva` (panorama e raio-x), `ui/componentes.py:kpi` e `badge_risco` (três telas) |
-| Layout | abas, colunas, sidebar; narrativa do panorama à decisão |
+| Componentização real | `ui/graficos.py:grafico_chuva` (abas 1 e 2), `ui/componentes.py:cartao_recomendacao` (abas 2 e 3), `kpi` e `badge_risco` (três telas) |
+| Layout | abas numeradas como passos da jornada, colunas, sidebar enxuta, detalhes em expanders |
 | Design para latência | `st.spinner`/`st.status`, `st.progress` ao atualizar o clima por município, RAG sob demanda com indicador |
 | Cores semânticas | `ui/tema.py`: seguro (verde), atenção (amarelo), alerta (laranja), crítico (vermelho) — sempre com ícone e rótulo |
-| Human-in-the-loop | `features/decisoes.py` — aprovar/editar/rejeitar com validação; auditoria em `output/decisoes.jsonl` |
+| Human-in-the-loop | `ui/acoes.py` — aprovar (1 clique, sugestão visível), ajustar, recusar com motivo; revisão da mensagem de convocação; auditoria em `output/decisoes.jsonl` |
 
 Mapa completo requisito → arquivo:função em [docs/RELATORIO_TAREFA_B.md](docs/RELATORIO_TAREFA_B.md).
 
@@ -153,7 +159,7 @@ internet; sem ela, os municípios aparecem sobre fundo branco). Para baixar de n
 convocação usam o RAG. Com o robô `citizentech-rpa` ao lado, troque `fontes.pedidos` para `rpa` no
 [config.yaml](config.yaml) para ler a planilha viva dele.
 
-**Testes:** `python -m unittest discover -s tests` (44 testes: providers sem rede, modelo hídrico, risco, demanda,
+**Testes:** `python -m unittest discover -s tests` (49 testes: codificação UTF-8 dos arquivos, providers sem rede, modelo hídrico, risco, demanda,
 recomendações, decisões e fluxos da interface).
 
 ## Limitações
