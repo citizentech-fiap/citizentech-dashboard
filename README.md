@@ -8,7 +8,7 @@ Global Solution 2026 · FIAP · **Front-end e Mobile Development em Sistemas de 
 | Ricardo de Paiva Melo | RM565522 |
 | Jonas Alaf | RM566479 |
 
-![Onde está pior: a seca de 2012](docs/img/tutorial/02-mapa-comece-por-aqui.jpg)
+![Onde está pior: a seca de 2012](docs/img/onde-esta-pior.jpg)
 
 ## O problema
 
@@ -100,7 +100,6 @@ flowchart LR
 ## Como usar (sem treinamento)
 
 O painel foi desenhado para quem nunca o viu: as abas são os passos, e a decisão principal leva **2 cliques**.
-**Tutorial completo, tela por tela, com prints: [docs/tutorial.md](docs/tutorial.md).**
 
 1. **"1 · Onde está pior"** — o mapa mostra a perda estimada por município; ao lado, "Comece por aqui" lista os 3
    mais críticos. O slider "Reveja a safra mês a mês" mostra a seca avançando. Clique **"Ver por quê →"**.
@@ -117,7 +116,7 @@ Na barra lateral ficam só **Safra** e **Estados**; cultura, limiar, serviço e 
 
 | Por quê (município) | O que fazer |
 |---|---|
-| ![Por quê](docs/img/tutorial/05-por-que-chuva.jpg) | ![O que fazer](docs/img/tutorial/07-o-que-fazer-no-municipio.jpg) |
+| ![Por quê](docs/img/por-que.jpg) | ![O que fazer](docs/img/o-que-fazer.jpg) |
 
 ## Requisitos da disciplina
 
