@@ -5,3 +5,6 @@ __pycache__/
 .claude/
 .pytest_cache/
 .streamlit/secrets.toml
+
+output/
+data/cache_http/
