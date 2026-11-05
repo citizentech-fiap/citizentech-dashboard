@@ -20,28 +20,72 @@ def dados_clima(ano=2012):
 
 
 class TestClimaModelo(unittest.TestCase):
-    def test_modelo_extremos_e_monotonicidade(self):
+    def test_ano_igual_normal_sem_penalidade_estrutural(self):
+        cfg = carregar()
+        for cultura in cfg["modelo_hidrico"]["culturas"]:
+            resultado = modelo_hidrico.calcular(50, 100, cultura, cfg,
+                                                chuva_normal_mm=50, et0_normal_mm=100)
+            self.assertEqual(resultado["perda_estimada_pct"], 0)
+            self.assertEqual(resultado["razao_isna"], 1)
+            self.assertEqual(resultado["isna_ano"], resultado["isna_normal"])
+            self.assertGreater(resultado["deficit_hidrico_mm"], 0)
+
+    def test_metade_da_satisfacao_da_normal(self):
         cfg = carregar()
         for cultura, parametros in cfg["modelo_hidrico"]["culturas"].items():
-            self.assertEqual(modelo_hidrico.perda_estimada(1000, 100, cultura, cfg), 0)
-            self.assertEqual(modelo_hidrico.perda_estimada(0, 100, cultura, cfg),
-                             min(100, parametros["ky"] * 100))
-            perdas = [modelo_hidrico.perda_estimada(p, 100, cultura, cfg) for p in range(200)]
-            self.assertTrue(all(a >= b for a, b in zip(perdas, perdas[1:])))
-            self.assertEqual(modelo_hidrico.perda_estimada(0, 0, cultura, cfg), 0)
-        cfg["modelo_hidrico"]["culturas"]["milho"]["ky"] = 0.5
-        self.assertEqual(modelo_hidrico.perda_estimada(0, 100, "milho", cfg), 50)
+            for chuva, et0 in [(25, 100), (50, 200)]:
+                resultado = modelo_hidrico.calcular(chuva, et0, cultura, cfg,
+                                                    chuva_normal_mm=50, et0_normal_mm=100)
+                self.assertAlmostEqual(resultado["razao_isna"], .5)
+                self.assertAlmostEqual(resultado["perda_estimada_pct"], parametros["ky"] * 50)
 
-    def test_formula_intermediaria(self):
+    def test_chuva_acima_da_normal_sem_perda_e_razao_sem_clip(self):
         cfg = carregar()
-        resultado = modelo_hidrico.calcular(50, 100, "milho", cfg)
-        self.assertEqual(resultado["deficit_hidrico_mm"], 45)
-        self.assertAlmostEqual(resultado["perda_estimada_pct"], 100 * 1.25 * 45 / 85)
-        # O limite é chuva EFETIVA >= demanda, não chuva bruta >= ETc.
-        self.assertEqual(modelo_hidrico.perda_estimada(85 / .8, 100, "milho", cfg), 0)
-        for valor in (-1, float("nan"), float("inf")):
-            with self.assertRaises(ValueError):
-                modelo_hidrico.calcular(valor, 100, "milho", cfg)
+        for cultura in cfg["modelo_hidrico"]["culturas"]:
+            for fator in (1.24, 1.34, 100):
+                resultado = modelo_hidrico.calcular(50 * fator, 100, cultura, cfg,
+                                                    chuva_normal_mm=50, et0_normal_mm=100)
+                self.assertEqual(resultado["perda_estimada_pct"], 0)
+                self.assertGreater(resultado["razao_isna"], 1)
+                self.assertLessEqual(resultado["isna_ano"], 1)
+
+    def test_monotonicidade_chuva_e_et0(self):
+        cfg = carregar()
+        normal = dict(chuva_normal_mm=50, et0_normal_mm=100)
+        for cultura in cfg["modelo_hidrico"]["culturas"]:
+            perdas = [modelo_hidrico.perda_estimada(p, 100, cultura, cfg, **normal)
+                      for p in range(200)]
+            self.assertTrue(all(a >= b for a, b in zip(perdas, perdas[1:])))
+            perdas_et0 = [modelo_hidrico.perda_estimada(25, et0, cultura, cfg, **normal)
+                          for et0 in range(1, 200)]
+            self.assertTrue(all(a <= b for a, b in zip(perdas_et0, perdas_et0[1:])))
+            self.assertTrue(all(0 <= p <= 100 for p in perdas + perdas_et0))
+
+    def test_extremos_sem_demanda_e_sem_chuva(self):
+        cfg = carregar()
+        normal = dict(chuva_normal_mm=50, et0_normal_mm=100)
+        for cultura, parametros in cfg["modelo_hidrico"]["culturas"].items():
+            self.assertEqual(modelo_hidrico.perda_estimada(0, 100, cultura, cfg, **normal),
+                             min(100, parametros["ky"] * 100))
+            sem_demanda = modelo_hidrico.calcular(0, 0, cultura, cfg, **normal)
+            self.assertEqual(sem_demanda["isna_ano"], 1)
+            self.assertEqual(sem_demanda["perda_estimada_pct"], 0)
+            ambos_sem_demanda = modelo_hidrico.calcular(0, 0, cultura, cfg,
+                                                        chuva_normal_mm=0, et0_normal_mm=0)
+            self.assertEqual(ambos_sem_demanda["razao_isna"], 1)
+        cfg["modelo_hidrico"]["culturas"]["milho"]["ky"] = .5
+        self.assertEqual(modelo_hidrico.perda_estimada(0, 100, "milho", cfg, **normal), 50)
+
+    def test_normal_nula_e_entradas_invalidas(self):
+        cfg = carregar()
+        with self.assertRaisesRegex(ValueError, "ISNA da normal é zero"):
+            modelo_hidrico.calcular(50, 100, "milho", cfg, chuva_normal_mm=0, et0_normal_mm=100)
+        for campo in ("chuva_mm", "et0_mm", "chuva_normal_mm", "et0_normal_mm"):
+            for valor in (-1, float("nan"), float("inf")):
+                argumentos = dict(chuva_mm=50, et0_mm=100, chuva_normal_mm=50, et0_normal_mm=100)
+                argumentos[campo] = valor
+                with self.subTest(campo=campo, valor=valor), self.assertRaises(ValueError):
+                    modelo_hidrico.calcular(cultura="milho", cfg=cfg, **argumentos)
 
     def test_sequencia_seca(self):
         self.assertEqual(clima.maior_sequencia_seca([0, 0.5, 1, 0, 0, 0, 5], 1), 3)
@@ -59,6 +103,7 @@ class TestClimaModelo(unittest.TestCase):
             serie = clima.montar_serie(diario, normal, 1, ano, carregar())
             self.assertEqual(serie.chuva_acum.iloc[-1], dias)
             self.assertEqual(serie.normal_acum.iloc[-1], dias * 2)
+            self.assertEqual(serie.et0_normal_acum.iloc[-1], dias * 4)
 
     def test_serie_rejeita_lacunas(self):
         diario, normal, _ = dados_clima()
@@ -89,6 +134,10 @@ class TestRisco(unittest.TestCase):
         self.assertEqual(parcial.normal_mm, 4)
         self.assertEqual(parcial.anomalia_pct, -50)
         self.assertEqual(parcial.classe, "critico")
+        self.assertAlmostEqual(parcial.isna_ano, .8 / (.85 * 5))
+        self.assertAlmostEqual(parcial.isna_normal, 1.6 / (.85 * 4))
+        self.assertAlmostEqual(parcial.razao_isna, .4)
+        self.assertAlmostEqual(parcial.perda_estimada_pct, 75)
         final = risco.indicadores(2012, "milho")
         replay = risco.evolucao(2012, "milho")
         self.assertEqual(replay.data.iloc[-1], pd.Timestamp("2012-06-30"))
@@ -96,6 +145,25 @@ class TestRisco(unittest.TestCase):
         self.assertEqual(replay.chuva_mm.iloc[0], 1)
         with self.assertRaises(ValueError):
             risco.indicadores(2012, "milho", "2011-12-31")
+
+    @patch("pipelines.risco.dados_locais")
+    def test_replay_normal_limitada_ao_mesmo_periodo(self, locais):
+        diario, normal, municipios = dados_clima()
+        diario["chuva_mm"] = 2.
+        diario["et0_mm"] = 4.
+        # Depois do corte, a normal muda radicalmente. Não pode vazar no replay.
+        normal.loc[normal.dia_ano > 2, "chuva_media_mm"] = 20.
+        normal.loc[normal.dia_ano > 2, "et0_media_mm"] = 1.
+        locais.clima_diario.return_value = diario
+        locais.climatologia.return_value = normal
+        locais.municipios.return_value = municipios
+        parcial = risco.indicadores(2012, "milho", "2012-01-02").iloc[0]
+        self.assertEqual(parcial.perda_estimada_pct, 0)
+        self.assertEqual(parcial.razao_isna, 1)
+        replay = risco.evolucao(2012, "milho")
+        self.assertEqual(replay.perda_estimada_pct.iloc[0], 0)
+        self.assertEqual(replay.isna_normal.iloc[0], parcial.isna_normal)
+        self.assertGreater(risco.indicadores(2012, "milho").perda_estimada_pct.iloc[0], 0)
 
 
 def pedidos_teste():

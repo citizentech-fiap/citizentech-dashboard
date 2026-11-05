@@ -9,7 +9,8 @@ from providers import dados_locais
 from providers.config import carregar
 
 COLUNAS = ["cod_ibge", "municipio", "uf", "chuva_mm", "normal_mm", "anomalia_pct",
-           "maior_seca_dias", "deficit_hidrico_mm", "perda_estimada_pct", "classe"]
+           "maior_seca_dias", "deficit_hidrico_mm", "isna_ano", "isna_normal",
+           "razao_isna", "perda_estimada_pct", "classe"]
 
 
 def classificar(perda, cfg):
@@ -27,7 +28,8 @@ def _indicadores(series, municipios, cultura, corte, cfg):
         periodo = serie.loc[serie.data <= corte]
         chuva = float(periodo.chuva.sum())
         normal = float(periodo.normal_acum.iloc[-1]) if len(periodo) else 0.0
-        modelo = calcular(chuva, periodo.et0.sum(), cultura, cfg)
+        modelo = calcular(chuva, periodo.et0.sum(), cultura, cfg,
+                          chuva_normal_mm=normal, et0_normal_mm=periodo.et0_normal.sum())
         linhas.append({"cod_ibge": municipio.cod_ibge, "municipio": municipio.municipio,
                        "uf": municipio.uf, "chuva_mm": chuva, "normal_mm": normal,
                        "anomalia_pct": (chuva / normal - 1) * 100 if normal else float("nan"),
@@ -76,7 +78,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         resultado = indicadores(args.ano, args.cultura)
-        print(f"Safra {args.ano} — {args.cultura} — estimativa acadêmica FAO-33")
+        print(f"Safra {args.ano} — {args.cultura} — ISNA relativo à normal 1991–2020 (adaptação FAO-33)")
         print(resultado.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
         print("Classes:", resultado.classe.value_counts().to_dict())
     except (FileNotFoundError, ValueError) as erro:

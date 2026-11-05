@@ -23,16 +23,27 @@
   somente os campos deste contrato, sem expor dados pessoais adicionais da planilha.
 
 ## Saídas dos pipelines (DataFrames)
-- `pipelines.clima.serie_safra(cod_ibge, ano)` → diária: `data, chuva, chuva_acum, normal_acum, et0, et0_acum`.
+- `pipelines.clima.serie_safra(cod_ibge, ano)` → diária: `data, chuva, chuva_acum, normal_acum,
+  et0, et0_acum, et0_normal, et0_normal_acum`. As duas últimas colunas trazem ET0 da normal
+  1991–2020 alinhada por mês/dia, para comparar a satisfação hídrica no mesmo período.
 - `pipelines.risco.indicadores(ano, cultura, ate_data=None)` → um por município: `cod_ibge, municipio, uf,
-  chuva_mm, normal_mm, anomalia_pct, maior_seca_dias, deficit_hidrico_mm, perda_estimada_pct, classe`
+  chuva_mm, normal_mm, anomalia_pct, maior_seca_dias, deficit_hidrico_mm,
+  isna_ano, isna_normal, razao_isna, perda_estimada_pct, classe`
   (`classe` ∈ seguro|atencao|alerta|critico pelos limites inferiores inclusivos de `risco.classes`).
   `ate_data` permite o replay (deve pertencer à safra do ano). `evolucao(ano, cultura,
   passo="semana")` retorna essas colunas mais `data`; passos `dia`, `semana` e `mes`,
   incluindo sempre o último dia da safra. Dados incompletos levantam erro claro, nunca viram chuva zero.
   `anomalia_pct=(chuva/normal-1)*100` (NaN se normal zero); `deficit_hidrico_mm` é ETc−ETa.
-  A perda FAO-33 usa os totais **do mesmo período**, sem balanço de solo ou fenologia;
-  não é o indicador oficial INMET e nunca determina sozinho pagamento do Garantia-Safra.
+  Para ano e normal separadamente, ETc=Kc×ET0 e ETa=min(ETc,fator×chuva).
+  ISNA (Índice de Satisfação das Necessidades de Água) = ETa/ETc, entre 0 e 1;
+  `razao_isna=isna_ano/isna_normal` pode superar 1 (não é truncada).
+  Perda (%) = clip(100×Ky×(1−razao_isna),0,100): adaptação acadêmica da resposta FAO-33
+  **relativa à normal 1991–2020**, usando chuva e ET0 **do mesmo período**, inclusive no replay.
+  Ano igual à normal ou satisfação maior que a normal → perda zero; chuva maior pode não
+  bastar se ET0 também aumentar. Sem demanda, ISNA=1; normal com ISNA=0 levanta erro claro,
+  pois não há referência para a razão. Déficit em mm continua absoluto, apenas diagnóstico.
+  Sem balanço de solo ou fenologia; não é o indicador oficial INMET nem comprovação de perda
+  ou direito ao pagamento do Garantia-Safra. As decisões de vistoria e pagamento são externas.
 - `pipelines.demanda.resumo(pedidos)` → por município: `pedidos, familias_garantia_safra, travados_sem_caf,
   docs_mais_faltantes, revisao_humana, docs_completos`, além de `cod_ibge, municipio, uf`.
   `docs_mais_faltantes` é dict documento→contagem em ordem decrescente; `docs_completos` exige

@@ -28,10 +28,12 @@ safra:
   normal_inicio: 1991
   normal_fim: 2020
 
-# Estimativa da perda por estresse hídrico — resposta da produção ao déficit hídrico (FAO, Boletim 33):
-#   perda = Ky * (1 - ETa/ETc), ETc = Kc * ET0, ETa = min(ETc, chuva_efetiva), chuva_efetiva = fator * chuva
-# É uma aproximação do indicador "Modelo de Penalização Hídrica (INMET)" usado pelo Garantia-Safra,
-# NÃO o modelo oficial. Por isso a vistoria (o outro indicador) é decisão humana no painel.
+# Estimativa acadêmica: resposta FAO-33 adaptada ao ISNA relativo à normal 1991–2020.
+# ISNA = ETa/ETc; ETc = Kc * ET0; ETa = min(ETc, fator * chuva), para ano e normal.
+# perda (%) = clip(100 * Ky * (1 - ISNA_ano/ISNA_normal), 0, 100).
+# Chuva e ET0 da normal cobrem o mesmo período (inclusive no replay até a data).
+# Não penaliza o déficit estrutural de um ano igual à normal. Não é o modelo oficial
+# INMET nem comprova direito ao Garantia-Safra; vistoria e pagamento são decisões externas.
 modelo_hidrico:
   fator_chuva_efetiva: 0.8
   dia_seco_mm: 1.0

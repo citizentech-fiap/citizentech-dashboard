@@ -35,6 +35,8 @@ def montar_serie(clima, normal, cod_ibge, ano, cfg):
     serie["normal_acum"] = medias.chuva_media_mm.to_numpy().cumsum()
     serie["et0"] = diario.et0_mm.to_numpy()
     serie["et0_acum"] = serie.et0.cumsum()
+    serie["et0_normal"] = medias.et0_media_mm.to_numpy()
+    serie["et0_normal_acum"] = serie.et0_normal.cumsum()
     return serie
 
 
