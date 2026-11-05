@@ -248,7 +248,7 @@ class TestDecisoes(unittest.TestCase):
         self.assertIn("a confirmar", template)
         rag = Mock()
         rag.answer.return_value = {"answer": "Leve CPF [1].", "abstained": False}
-        self.assertIn("Leve CPF [1].", decisoes.rascunho_convocacao(rec, rag))
+        self.assertIn("Leve CPF.", decisoes.rascunho_convocacao(rec, rag))  # citação [n] sai da mensagem ao agricultor
         rag.answer.return_value["abstained"] = True
         self.assertEqual(decisoes.rascunho_convocacao(rec, rag), template)
         rag.answer.side_effect = RuntimeError("offline")

@@ -1,6 +1,7 @@
 """Auditoria local e rascunhos: nada é enviado automaticamente."""
 from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 
 from providers.config import carregar
@@ -53,6 +54,14 @@ def ja_decidida(id, caminho=None):
     return any(registro["id"] == id for registro in listar(caminho))
 
 
+def texto_para_agricultor(resposta):
+    """A resposta do RAG vem em Markdown e com citações [n] — úteis na tela, sem sentido numa mensagem
+    ao agricultor. Remove marcações (**negrito**, títulos) e números de citação, preservando links."""
+    texto = re.sub(r"\s*\[\d+(?:\s*,\s*\d+)*\]", "", resposta)
+    texto = re.sub(r"\*\*|__|^#+\s*", "", texto, flags=re.MULTILINE)
+    return re.sub(r"\n{3,}", "\n\n", texto).strip()
+
+
 def rascunho_convocacao(rec, rag=None):
     inicio = (f"Convocação para atendimento — {rec.municipio}\n"
               f"{rec.titulo}.\nData, horário e local: a confirmar pelo gestor.\n")
@@ -66,7 +75,7 @@ def rascunho_convocacao(rec, rag=None):
                 service_id="garantia_safra")
             if (not resposta.get("abstained", True) and not resposta.get("blocked", False)
                     and resposta.get("answer", "").strip()):
-                orientacao = resposta["answer"].strip()
+                orientacao = texto_para_agricultor(resposta["answer"])
         except Exception:
             pass  # Indisponibilidade do RAG mantém o rascunho local utilizável.
     return inicio + orientacao + "\nO atendimento não garante concessão nem pagamento do benefício."
