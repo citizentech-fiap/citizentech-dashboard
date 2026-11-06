@@ -90,6 +90,7 @@ class TestFontes(unittest.TestCase):
         get.assert_called_once()
         self.assertEqual(get.call_args.args[1]["timezone"], "America/Recife")
         self.assertEqual(get.call_args.args[1]["daily"], "precipitation_sum,et0_fao_evapotranspiration")
+        self.assertEqual(get.call_args.args[1]["models"], "era5")  # mesmo modelo no ano e na normal
 
     @patch("providers.open_meteo.http.get")
     def test_diario_rejeita_lacuna_e_null(self, get):

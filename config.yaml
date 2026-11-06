@@ -11,6 +11,9 @@ paths:
   convocacoes: output/convocacoes               # mensagens aprovadas (.eml)
   cache_http: data/cache_http                   # cache das chamadas às APIs
   genai_path: ../genAI
+  pam: data/pam_municipios.csv
+  garantia_safra: data/garantia_safra_pagamentos.csv
+  garantia_safra_cobertura: data/garantia_safra_cobertura.json
 
 fontes:
   pedidos: snapshot          # snapshot (safra simulada) | rpa (planilha viva do robô)
@@ -18,11 +21,18 @@ fontes:
   retries: 3
   backoff_s: 2               # espera exponencial entre tentativas HTTP
   intervalo_normal_s: 15     # consultas de 30 anos têm maior custo no limite Open-Meteo
+  intervalo_download_s: 15
+  backoff_download_s: 60     # pausa exponencial se o download da CGU responder 405
+  pam_inicio: 2002
+  pam_fim: 2025
+  pagamentos_inicio: "2012-01"
+  pagamentos_fim: "2026-10"
 
 safra:
   inicio_mes_dia: "01-01"    # estação chuvosa do sertão: janeiro a junho
   fim_mes_dia: "06-30"
-  anos_disponiveis: [2012, 2013, 2016, 2019, 2020, 2024, 2025, 2026]
+  inicio_estimativa: "03-01"
+  anos_disponiveis: [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   ano_padrao: 2026
   ano_demo_seca: 2012        # a grande seca: modo demonstração
   normal_inicio: 1991
@@ -49,6 +59,14 @@ risco:
     atencao: 20
     alerta: 40
     critico: 60
+  classes_chuva:                    # fronteiras de anomalia (%)
+    seguro: 0                      # >= 0; déficit leve até -20 é atenção
+    atencao: -20
+    alerta: -40                    # abaixo deste limite: crítico
+
+realidade:
+  anos_media: 10
+  maiores_divergencias: 10
 
 recomendacoes:
   min_pedidos_mutirao: 10          # mutirão de CAF só se houver pelo menos N pedidos travados por falta de CAF

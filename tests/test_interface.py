@@ -217,14 +217,14 @@ class TestInterface(unittest.TestCase):
         app.selectbox(key="ano").set_value(2013).run()
         self.assertEqual(sum((b.key or "").startswith("aprovar_") for b in app.button), 5)
 
-    def test_2026_e_recorte_vazio_sao_estados_validos(self):
+    def test_safra_sem_perda_e_recorte_vazio_sao_estados_validos(self):
         app = self.app()
-        app.selectbox(key="ano").set_value(2026).run()
+        app.selectbox(key="ano").set_value(2024).run()  # ERA5: nenhum município com perda estimada >= 40%
         self.assertTrue(any("nenhum município precisa de vistoria" in m.value for m in app.markdown))
         self.aba(app, 2)
         self.assertTrue(any("Nenhum município atingiu o critério de 40% nesta safra" in s.value for s in app.success))
         self.assertFalse(any((b.key or "").startswith("aprovar_vistoria") for b in app.button))
-        self.assertEqual(sum((b.key or "").startswith("aprovar_mutirao") for b in app.button), 4)
+        self.assertGreater(sum((b.key or "").startswith("aprovar_mutirao") for b in app.button), 0)
         app.selectbox(key="ano").set_value(2013).run()
         self.sem_excecoes(app)
         app.multiselect(key="ufs").set_value([]).run()

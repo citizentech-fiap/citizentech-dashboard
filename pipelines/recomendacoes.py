@@ -44,18 +44,22 @@ def gerar(indicadores, demanda, cfg, ano):
         gargalo = int(dem.get("travados_sem_caf", 0))
         completos = int(dem.get("docs_completos", 0))
         perda = float(ind["perda_estimada_pct"])
-        score = (pesos["risco"] * perda / 100 +
+        estimavel = bool(ind.get("estimavel", math.isfinite(perda)))
+        risco_score = perda / 100 if estimavel and math.isfinite(perda) else 0.0
+        score = (pesos["risco"] * risco_score +
                  pesos["familias"] * (familias / max_familias if max_familias else 0) +
                  pesos["gargalo"] * (gargalo / max_gargalo if max_gargalo else 0)) / sum(pesos.values())
         anomalia = ind["anomalia_pct"]
         chuva = (f"chuva {abs(anomalia):.0f}% {'abaixo' if anomalia < 0 else 'acima'} da normal"
                  if math.isfinite(anomalia) else "normal de chuva indisponível")
-        justificativa = (f"Perda estimada de {perda:.0f}% (critério {criterio}%); {chuva}; "
+        sinal = (f"Perda estimada de {perda:.0f}% (critério {criterio}%)" if estimavel
+                 else "Cedo para estimar perda — sinal de chuva")
+        justificativa = (f"{sinal}; {chuva}; "
                          f"{familias} famílias inscritas na simulação do Garantia-Safra. "
                          "Estimativa acadêmica: pagamento depende dos dois indicadores, incluindo vistoria.")
         regras = []
         nome = ind["municipio"]
-        if perda >= criterio:
+        if estimavel and perda >= criterio:
             regras.append(("vistoria", f"Indicar técnico vistoriador para a vistoria de perdas em {nome}",
                            "Solicitar vistoria amostral de perdas em campo."))
         if gargalo >= cfg["recomendacoes"]["min_pedidos_mutirao"]:

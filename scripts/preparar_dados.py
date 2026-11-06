@@ -18,7 +18,7 @@ import yaml
 
 from pipelines.clima import dias_calendario
 from pipelines.risco import indicadores
-from providers import dados_locais, ibge, open_meteo
+from providers import dados_locais, ibge, ibge_pam, open_meteo, transparencia
 from providers.config import carregar
 from providers.http import gravar_atomico
 
@@ -159,20 +159,81 @@ def gerar_pedidos(indicadores_anos, cfg, catalogo):
     return pd.DataFrame(linhas)
 
 
-def preparar(forcar=False):
+def baixar_pam(municipios, cfg, forcar=False):
+    arquivo = cfg["paths"]["pam"]
+    quadro = _ler_existente(arquivo, ibge_pam.COLUNAS)
+    anos = list(range(cfg["fontes"]["pam_inicio"], cfg["fontes"]["pam_fim"] + 1))
+    for ano in anos:
+        atual = quadro.loc[quadro.ano.eq(ano)]
+        esperado = {(int(c), ano, cultura) for c in municipios.cod_ibge
+                    for cultura in ibge_pam.CULTURAS.values()}
+        if (not forcar and len(atual) == len(esperado)
+                and set(map(tuple, atual[["cod_ibge", "ano", "cultura"]].to_numpy())) == esperado):
+            print(f"PAM {ano}: existente", flush=True)
+            continue
+        print(f"Baixando PAM {ano}", flush=True)
+        time.sleep(cfg["fontes"]["intervalo_download_s"])
+        novo = ibge_pam.producao(municipios.cod_ibge, [ano], forcar=forcar)
+        quadro = pd.concat([quadro.loc[~quadro.ano.eq(ano)], novo], ignore_index=True)
+        salvar_csv(quadro.sort_values(["cod_ibge", "ano", "cultura"]), arquivo)
+
+
+def baixar_garantia_safra(municipios, cfg, forcar=False):
+    arquivo = cfg["paths"]["garantia_safra"]
+    metadados = cfg["paths"]["garantia_safra_cobertura"]
+    quadro = _ler_existente(arquivo, transparencia.COLUNAS)
+    cobertura = json.loads(metadados.read_text(encoding="utf-8")) if metadados.exists() else {}
+    meses = pd.period_range(cfg["fontes"]["pagamentos_inicio"], cfg["fontes"]["pagamentos_fim"], freq="M")
+    grupos = {}
+    for mes in meses:
+        grupos.setdefault(transparencia.safra_pagamento(mes), []).append(mes.strftime("%Y%m"))
+    falhas = []
+    publicados = transparencia.meses_publicados(cfg=cfg)
+    cobertura.update({m.strftime("%Y%m"): "nao_publicado" for m in meses
+                      if m.strftime("%Y%m") not in publicados})
+    gravar_atomico(metadados, json.dumps(cobertura, indent=2).encode("utf-8"))
+    for safra, periodo in grupos.items():
+        concluido = all(cobertura.get(m) == "disponivel" or
+                        (cobertura.get(m) in ("inexistente", "nao_publicado") and m not in publicados)
+                        for m in periodo)
+        if not forcar and arquivo.exists() and concluido:
+            print(f"Garantia-Safra {safra}: agregado existente", flush=True)
+            continue
+        try:
+            # Rebaixa o período inteiro se incompleto: NIS nunca é persistido
+            # nem somamos contagens mensais (a mesma família recebe parcelas).
+            novo = transparencia.garantia_safra(periodo, municipios, cfg=cfg,
+                                               progresso=lambda s: print(s, flush=True), publicados=publicados)
+            quadro = pd.concat([quadro.loc[~quadro.safra.eq(safra)], novo], ignore_index=True)
+            salvar_csv(quadro.sort_values(["cod_ibge", "safra"]), arquivo)
+            cobertura.update(novo.attrs["cobertura"])
+            gravar_atomico(metadados, json.dumps(cobertura, indent=2).encode("utf-8"))
+            print(f"Garantia-Safra {safra}: agregado salvo", flush=True)
+        except Exception as erro:
+            falhas.append(f"safra {safra}: {erro}")
+            print(f"AVISO Garantia-Safra: {falhas[-1]}", flush=True)
+    if falhas:
+        raise ValueError("; ".join(falhas))
+
+
+def preparar(forcar=False, etapas=None):
     cfg = carregar()
     municipios = dados_locais.municipios()
     falhas = []
-    for etapa in (baixar_malhas, baixar_clima, baixar_normal):
+    etapas = etapas or ["malhas", "clima", "normal", "pam", "garantia_safra", "pedidos"]
+    for etapa in (baixar_malhas, baixar_clima, baixar_normal, baixar_pam, baixar_garantia_safra):
+        if etapa.__name__.removeprefix("baixar_") not in etapas:
+            continue
         try:
             etapa(municipios, cfg, forcar)
         except Exception as erro:
             falhas.append(f"{etapa.__name__}: {erro}")
             print(f"AVISO: {falhas[-1]}. Progresso salvo; execute novamente para retomar.", flush=True)
     arquivo = cfg["paths"]["pedidos_snapshot"]
-    if forcar or not arquivo.exists():
+    anos = cfg["safra"]["anos_disponiveis"]
+    existente = pd.read_csv(arquivo) if arquivo.exists() else pd.DataFrame(columns=["ano"])
+    if "pedidos" in etapas and (forcar or set(existente.ano) != set(anos)):
         try:
-            anos = sorted({cfg["safra"]["ano_padrao"], cfg["safra"]["ano_demo_seca"]})
             indicadores_anos = {ano: indicadores(ano, cfg["modelo_hidrico"]["cultura_padrao"]) for ano in anos}
             config_rpa = cfg["paths"]["rpa_controle"].parents[1] / "config.yaml"
             if not config_rpa.is_file():
@@ -185,7 +246,7 @@ def preparar(forcar=False):
             print(f"AVISO: {falhas[-1]}; nenhum clima será inventado.", flush=True)
     else:
         print("Pedidos sintéticos: existente", flush=True)
-    for chave in ("malhas", "clima_diario", "climatologia", "pedidos_snapshot"):
+    for chave in ("malhas", "clima_diario", "climatologia", "pedidos_snapshot", "pam", "garantia_safra"):
         caminho = cfg["paths"][chave]
         print(f"{chave}: {caminho.stat().st_size if caminho.exists() else 0:,} bytes", flush=True)
     return 1 if falhas else 0
@@ -194,4 +255,7 @@ def preparar(forcar=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--forcar", action="store_true", help="Renova snapshots e cache HTTP")
-    sys.exit(preparar(parser.parse_args().forcar))
+    parser.add_argument("--etapas", nargs="+", choices=["malhas", "clima", "normal", "pam", "garantia_safra", "pedidos"],
+                        help="Executa apenas as etapas escolhidas; padrão: todas")
+    args = parser.parse_args()
+    sys.exit(preparar(args.forcar, args.etapas))

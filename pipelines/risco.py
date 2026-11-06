@@ -10,7 +10,7 @@ from providers.config import carregar
 
 COLUNAS = ["cod_ibge", "municipio", "uf", "chuva_mm", "normal_mm", "anomalia_pct",
            "maior_seca_dias", "deficit_hidrico_mm", "isna_ano", "isna_normal",
-           "razao_isna", "perda_estimada_pct", "classe"]
+           "razao_isna", "perda_estimada_pct", "estimavel", "classe"]
 
 
 def classificar(perda, cfg):
@@ -21,7 +21,20 @@ def classificar(perda, cfg):
                key=classes.get)
 
 
+def classificar_chuva(anomalia, cfg):
+    if pd.isna(anomalia):
+        raise ValueError("Anomalia de chuva indisponível para classificação.")
+    limites = cfg["risco"]["classes_chuva"]
+    if anomalia >= limites["seguro"]:
+        return "seguro"
+    if anomalia >= limites["atencao"]:
+        return "atencao"
+    return "alerta" if anomalia >= limites["alerta"] else "critico"
+
+
 def _indicadores(series, municipios, cultura, corte, cfg):
+    estimavel = (corte >= pd.Timestamp(f"{corte.year}-{cfg['safra']['inicio_estimativa']}")
+                 or corte == pd.Timestamp(f"{corte.year}-{cfg['safra']['fim_mes_dia']}"))
     linhas = []
     for municipio in municipios.itertuples(index=False):
         serie = series[municipio.cod_ibge]
@@ -30,12 +43,17 @@ def _indicadores(series, municipios, cultura, corte, cfg):
         normal = float(periodo.normal_acum.iloc[-1]) if len(periodo) else 0.0
         modelo = calcular(chuva, periodo.et0.sum(), cultura, cfg,
                           chuva_normal_mm=normal, et0_normal_mm=periodo.et0_normal.sum())
+        anomalia = (chuva / normal - 1) * 100 if normal else float("nan")
+        classe = (classificar(modelo["perda_estimada_pct"], cfg) if estimavel
+                  else classificar_chuva(anomalia, cfg))
+        if not estimavel:
+            modelo["perda_estimada_pct"] = float("nan")
         linhas.append({"cod_ibge": municipio.cod_ibge, "municipio": municipio.municipio,
                        "uf": municipio.uf, "chuva_mm": chuva, "normal_mm": normal,
-                       "anomalia_pct": (chuva / normal - 1) * 100 if normal else float("nan"),
+                       "anomalia_pct": anomalia,
                        "maior_seca_dias": maior_sequencia_seca(
                            periodo, cfg["modelo_hidrico"]["dia_seco_mm"]),
-                       **modelo, "classe": classificar(modelo["perda_estimada_pct"], cfg)})
+                       **modelo, "estimavel": estimavel, "classe": classe})
     return pd.DataFrame(linhas, columns=COLUNAS)
 
 

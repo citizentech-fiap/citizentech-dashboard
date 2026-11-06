@@ -49,3 +49,22 @@ def climatologia():
     if quadro.duplicated(["cod_ibge", "dia_ano"]).any():
         raise ValueError("Climatologia contém dias duplicados por município.")
     return quadro
+
+
+def pam():
+    from providers.ibge_pam import COLUNAS
+    quadro = pd.read_csv(caminho("pam"), encoding="utf-8")
+    if not set(COLUNAS).issubset(quadro) or quadro.duplicated(["cod_ibge", "ano", "cultura"]).any():
+        raise ValueError("Snapshot PAM inválido.")
+    # NaN nas medidas é parte do contrato SIDRA, não erro de leitura.
+    if quadro[["cod_ibge", "ano", "cultura"]].isna().any().any():
+        raise ValueError("Snapshot PAM sem identificação municipal/ano/cultura.")
+    return quadro[COLUNAS]
+
+
+def garantia_safra():
+    from providers.transparencia import COLUNAS
+    quadro = _csv("garantia_safra", COLUNAS)
+    if quadro.duplicated(["cod_ibge", "safra"]).any():
+        raise ValueError("Pagamentos duplicados por município/safra.")
+    return quadro[COLUNAS]

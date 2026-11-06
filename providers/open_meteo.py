@@ -7,6 +7,10 @@ import pandas as pd
 from providers import http
 
 URL = "https://archive-api.open-meteo.com/v1/archive"
+# Série homogênea: o padrão "best_match" troca de modelo a partir de 2017 e infla a chuva
+# no semiárido (Quixadá jan–jun/2019: 1.081 mm no best_match × 742 mm no ERA5), o que
+# esconderia secas reais quando comparadas à normal 1991–2020 (quase toda ERA5).
+MODELO = "era5"
 
 
 def diario(lat, lon, inicio, fim, *, forcar=False) -> pd.DataFrame:
@@ -19,6 +23,7 @@ def diario(lat, lon, inicio, fim, *, forcar=False) -> pd.DataFrame:
         "end_date": fim.strftime("%Y-%m-%d"),
         "daily": "precipitation_sum,et0_fao_evapotranspiration",
         "timezone": "America/Recife",
+        "models": MODELO,
     }, forcar=forcar))
     try:
         dados = bruto["daily"]

@@ -137,7 +137,9 @@ class TestRisco(unittest.TestCase):
         self.assertAlmostEqual(parcial.isna_ano, .8 / (.85 * 5))
         self.assertAlmostEqual(parcial.isna_normal, 1.6 / (.85 * 4))
         self.assertAlmostEqual(parcial.razao_isna, .4)
-        self.assertAlmostEqual(parcial.perda_estimada_pct, 75)
+        self.assertFalse(parcial.estimavel)
+        self.assertTrue(pd.isna(parcial.perda_estimada_pct))
+        self.assertAlmostEqual(risco.indicadores(2012, "milho", "2012-03-01").perda_estimada_pct.iloc[0], 75)
         final = risco.indicadores(2012, "milho")
         replay = risco.evolucao(2012, "milho")
         self.assertEqual(replay.data.iloc[-1], pd.Timestamp("2012-06-30"))
@@ -158,10 +160,11 @@ class TestRisco(unittest.TestCase):
         locais.climatologia.return_value = normal
         locais.municipios.return_value = municipios
         parcial = risco.indicadores(2012, "milho", "2012-01-02").iloc[0]
-        self.assertEqual(parcial.perda_estimada_pct, 0)
+        self.assertTrue(pd.isna(parcial.perda_estimada_pct))
+        self.assertFalse(parcial.estimavel)
         self.assertEqual(parcial.razao_isna, 1)
         replay = risco.evolucao(2012, "milho")
-        self.assertEqual(replay.perda_estimada_pct.iloc[0], 0)
+        self.assertTrue(pd.isna(replay.perda_estimada_pct.iloc[0]))
         self.assertEqual(replay.isna_normal.iloc[0], parcial.isna_normal)
         self.assertGreater(risco.indicadores(2012, "milho").perda_estimada_pct.iloc[0], 0)
 
