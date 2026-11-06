@@ -119,4 +119,3 @@ interface:
   limiar_min: 0
   limiar_max: 100
   limiar_passo: 5
-  chat_max_caracteres: 1500

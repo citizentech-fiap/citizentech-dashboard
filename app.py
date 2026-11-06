@@ -1,10 +1,12 @@
 """Mandacaru: entrada fina, filtros compartilhados e jornada de decisão."""
+import pandas as pd
 import streamlit as st
 
-from features import assistente, decisoes, municipio, panorama
+from features import resumo, decisoes, municipio, panorama
 from providers.config import carregar
 from state import dados, store
 from ui import tema
+from ui.componentes import fontes
 from ui.sidebar import renderizar as sidebar
 
 
@@ -41,13 +43,22 @@ def principal():
         st.info("Não há municípios nos estados escolhidos. Amplie as UFs selecionadas.")
         return
     oficial = cfg["risco"]["criterio_garantia_safra"]
-    quantidade = int(quadro.perda_estimada_pct.ge(oficial).sum())
+    quadro_cabecalho = quadro
+    if store.obter("aba") == store.ABAS[0]:
+        mes = store.obter("mes")
+        corte = min(pd.Timestamp(f"{filtros['ano']}-{mes:02d}-01") + pd.offsets.MonthEnd(0),
+                    pd.Timestamp(f"{filtros['ano']}-{cfg['safra']['fim_mes_dia']}"))
+        quadro_cabecalho = dados.contexto(**filtros, versao=versao, corte=corte.date().isoformat())["quadro"]
+    estimavel = bool(quadro_cabecalho.estimavel.all())
+    quantidade = int(quadro_cabecalho.perda_estimada_pct.ge(oficial).sum())
     demo = " (seca histórica, modo demonstração)" if filtros["ano"] == cfg["safra"]["ano_demo_seca"] else ""
     situacao = (f"{quantidade} de {len(quadro)} municípios com perda estimada de {oficial}% ou mais."
                 if quantidade else "nenhum município precisa de vistoria.")
+    if not estimavel:
+        quantidade = int(quadro_cabecalho.classe.eq("critico").sum())
+        situacao = f"{quantidade} municípios com chuva muito abaixo do normal; estimativa a partir de 1º de março."
     st.write(f"**Safra {filtros['ano']}{demo}: {situacao}**")
     store.preparar_decisoes(filtros, cfg)
-    tema.legenda(cfg)
     for aviso in (ctx["aviso"], aviso_mapa):
         if aviso:
             st.warning(aviso.replace("snapshot", "arquivo local"))
@@ -65,7 +76,9 @@ def principal():
                 elif indice == 2:
                     decisoes.renderizar(ctx, cfg, filtros)
                 else:
-                    assistente.renderizar(ctx, cfg, filtros)
+                    resumo.renderizar(ctx, cfg, filtros)
+
+    fontes()
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ import streamlit as st
 from pipelines.demanda import por_servico
 from features.decisoes import acoes_municipio
 from state import dados, store
-from ui.componentes import badge_risco, como_calculamos, kpi
-from ui.graficos import barras_documentos, barras_servicos, calendario_seco, grafico_chuva
+from ui.componentes import badge_risco, como_calculamos, kpi, percentual, selo_simulado
+from ui.graficos import barras_documentos, barras_servicos, calendario_seco, grafico_chuva, producao_real
 
 
 def renderizar(ctx, cfg, filtros, versao):
@@ -24,7 +24,9 @@ def renderizar(ctx, cfg, filtros, versao):
     st.caption(f"Safra completa {filtros['ano']} · {cfg['modelo_hidrico']['culturas'][filtros['cultura']]['nome']}")
     a, b, c, d = st.columns(4)
     with a:
-        kpi("Perda estimada", f"{linha.perda_estimada_pct:.1f}%", cor=linha.classe)
+        kpi("Perda estimada", percentual(linha.perda_estimada_pct), cor=linha.classe)
+        if not linha.estimavel:
+            st.caption("estimativa a partir de 1º de março")
     with b:
         comparacao = (f"{abs(linha.anomalia_pct):.0f}% {'abaixo' if linha.anomalia_pct < 0 else 'acima'} do normal"
                       if linha.anomalia_pct == linha.anomalia_pct else "normal indisponível")  # NaN != NaN
@@ -34,7 +36,9 @@ def renderizar(ctx, cfg, filtros, versao):
         kpi("Maior sequência sem chuva", f"{linha.maior_seca_dias} dias", f"Menos de {cfg['modelo_hidrico']['dia_seco_mm']:g} mm por dia",
             _cor_faixa(linha.maior_seca_dias, (15, 30, 60)))
     with d:
-        kpi("Agricultores sem CAF", str(linha.travados_sem_caf), "Pedidos travados · sintéticos", "alerta" if linha.travados_sem_caf else "seguro")
+        kpi("Agricultores sem CAF", str(linha.travados_sem_caf), "Pedidos travados", "alerta" if linha.travados_sem_caf else "seguro")
+        selo_simulado()
+    retrospectiva(codigo, linha, cfg, filtros, versao)
     with st.spinner("Preparando as evidências do município…"):
         serie = dados.serie(codigo, filtros["ano"], versao)
         ev = dados.evolucao(filtros["ano"], filtros["cultura"], versao)
@@ -51,7 +55,8 @@ def renderizar(ctx, cfg, filtros, versao):
     figura.clear()
     st.caption("Cada quadrado é um dia. Verde: com chuva; laranja: seco.")
     st.markdown("### O que impede o atendimento?")
-    st.caption(f"{len(pedidos)} pedidos sintéticos · serviço selecionado na barra lateral")
+    selo_simulado()
+    st.caption(f"{len(pedidos)} pedidos · serviço selecionado na barra lateral")
     colunas = st.columns(2)
     for coluna, (titulo, fig) in zip(colunas, (
             ("Pedidos por serviço", barras_servicos(por_servico(pedidos), cfg["interface"]["altura_barras"])),
@@ -76,3 +81,43 @@ def _cor_faixa(valor, limites):
     if valor >= alerta:
         return "alerta"
     return "atencao" if valor > atencao else "seguro"
+
+
+def retrospectiva(codigo, linha, cfg, filtros, versao):
+    st.markdown("### O que aconteceu de fato")
+    ano = filtros["ano"]
+    if ano > cfg["fontes"]["pam_fim"]:
+        st.info("Dados reais ainda não publicados (o IBGE publica a safra no ano seguinte)")
+    else:
+        try:
+            real = dados.perda_real(filtros["cultura"], versao)
+            municipal = real.loc[real.cod_ibge.eq(codigo)]
+            st.plotly_chart(producao_real(municipal, ano, cfg["realidade"]["anos_media"],
+                            cfg["interface"]["altura_chuva"]), key="producao_real")
+            atual = municipal.loc[municipal.ano.eq(ano), "perda_producao_pct"]
+            valor = atual.iloc[0] if not atual.empty else float("nan")
+            st.caption(f"Produção de {filtros['cultura']} (IBGE/PAM) · safra {ano} em vermelho")
+            r1, r2 = st.columns(2)
+            with r1:
+                kpi("Perda real (IBGE)", percentual(valor, 0), "produção × média dos dez anos anteriores")
+            with r2:
+                kpi("Perda estimada pelo painel", percentual(linha.perda_estimada_pct, 0), "só chuva (modelo hídrico)")
+            st.caption("Perda real relativa à produção média dos dez anos anteriores; retrospectiva, sem alterar prioridades.")
+        except (OSError, ValueError):
+            st.warning("Produção IBGE indisponível no arquivo local.")
+    st.caption(f"Famílias pagas entre jul/{ano} e jun/{ano+1} (Portal da Transparência)")
+    st.caption("Convenção analítica; o arquivo não informa ano-safra e há atrasos. Pagamentos não comprovam acerto ou erro do modelo.")
+    try:
+        pagos = dados.pagamentos(versao)
+        pagos = pagos.loc[pagos.cod_ibge.eq(codigo) & pagos.safra.eq(ano)]
+        completa = dados.cobertura_pagamentos(ano, versao)
+        if not completa:
+            st.warning("Cobertura de pagamentos da safra incompleta; ausência de registro não significa ausência de pagamento.")
+        if not pagos.empty:
+            st.write(f"{int(pagos.familias.sum())} famílias pagas · R$ {pagos.valor_total.sum():,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+        elif completa:
+            st.write("Sem pagamentos registrados no período completo.")
+        else:
+            st.write("Pagamentos não disponíveis para este município no recorte.")
+    except (OSError, ValueError):
+        st.warning("Pagamentos indisponíveis; recupere o arquivo local.")

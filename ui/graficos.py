@@ -24,21 +24,50 @@ def _acabamento(fig, altura):
 
 def mapa_perdas(quadro, malhas, cfg, altura):
     exibicao = quadro.copy()
+    estimavel = bool(quadro.estimavel.all())
     exibicao["risco"] = exibicao.classe.map(lambda c: f"{RISCOS[c][0]} {RISCOS[c][1]}")
-    fig = px.choropleth_map(
-        exibicao, geojson=malhas, featureidkey="properties.cod_ibge", locations="cod_ibge",
-        color="perda_estimada_pct", range_color=(0, 100), color_continuous_scale=escala_risco(cfg),
-        hover_name="municipio", hover_data={"cod_ibge": False, "risco": True,
-            "perda_estimada_pct": ":.1f", "chuva_mm": ":.0f", "normal_mm": ":.0f", "pedidos": True},
-        labels={"perda_estimada_pct": "Perda estimada (%)", "chuva_mm": "Chuva (mm)",
+    exibicao["perda_real_rotulo"] = exibicao.get("perda_producao_pct", pd.Series(index=exibicao.index, dtype=float)).map(
+        lambda x: f"{x:.0f}%" if pd.notna(x) else "não publicada/disponível")
+    hover = {"cod_ibge": False, "risco": True, "chuva_mm": ":.0f", "normal_mm": ":.0f",
+             "pedidos": True, "perda_real_rotulo": True}
+    campo = "perda_estimada_pct" if estimavel else "anomalia_pct"
+    hover[campo] = ":.1f"
+    parametros = dict(color=campo, range_color=(0, 100), color_continuous_scale=escala_risco(cfg)) if estimavel else dict(
+        color="risco", color_discrete_map={f"{RISCOS[c][0]} {RISCOS[c][1]}": CORES[c] for c in RISCOS},
+        category_orders={"risco": [f"{RISCOS[c][0]} {RISCOS[c][1]}" for c in RISCOS]})
+    fig = px.choropleth_map(exibicao, geojson=malhas, featureidkey="properties.cod_ibge", locations="cod_ibge",
+        **parametros, hover_name="municipio", hover_data=hover,
+        labels={"perda_estimada_pct": "Perda estimada (%)", "anomalia_pct": "Anomalia de chuva (%)",
+                "perda_real_rotulo": "Perda real IBGE", "chuva_mm": "Chuva (mm)",
                 "normal_mm": "Normal (mm)", "pedidos": "Pedidos", "risco": "Classe"},
-        # base cartográfica neutra (CARTO Positron, sem token): estados, litoral e cidades em cinza claro,
-        # para que só a escala de risco tenha cor; sem internet o Plotly cai para fundo branco.
         map_style=cfg["interface"].get("mapa_estilo", "carto-positron"), zoom=cfg["interface"]["mapa_zoom"],
-        center=cfg["interface"]["mapa_centro"], opacity=0.85,
-    )
+        center=cfg["interface"]["mapa_centro"], opacity=0.85)
     fig.update_traces(marker_line_width=1.2, marker_line_color="#3a3a3a")
-    fig.update_layout(coloraxis_colorbar=dict(title="Perda %", thickness=12, len=.75), hovermode="closest")
+    fig.update_layout(coloraxis_colorbar=dict(title="Perda %", thickness=12, len=.75),
+                      legend=dict(title="Sinal de chuva"))
+    return _acabamento(fig, altura)
+
+
+def dispersao_validacao(quadro, altura):
+    pares = quadro.dropna(subset=["perda_estimada_pct", "perda_producao_pct"])
+    fig = px.scatter(pares, x="perda_estimada_pct", y="perda_producao_pct", hover_name="municipio",
+                     hover_data=["ano"], labels={"perda_estimada_pct": "Perda estimada (%)",
+                     "perda_producao_pct": "Perda real IBGE (%)"})
+    fig.update_traces(marker=dict(color=CORES["primaria"], opacity=.55, size=7))
+    fig.add_shape(type="line", x0=0, y0=0, x1=100, y1=100, line=dict(dash="dot", color=CORES["muted"]))
+    return _acabamento(fig, altura)
+
+
+def producao_real(quadro, ano, anos_media, altura):
+    recorte = quadro.loc[quadro.ano.between(ano - anos_media, ano)]
+    cores = [CORES["critico"] if a == ano else CORES["primaria"] for a in recorte.ano]
+    fig = px.bar(recorte, x="ano", y="producao_t", labels={"ano": "Ano", "producao_t": "Produção (t)"})
+    fig.update_traces(marker_color=cores, hovertemplate="%{x}: %{y:,.0f} t<extra></extra>")
+    fig.update_xaxes(dtick=1)
+    media = recorte.loc[recorte.ano.eq(ano), "producao_media_10_anos_t"]
+    if not media.empty and pd.notna(media.iloc[0]):
+        fig.add_hline(y=media.iloc[0], line_dash="dash", line_color=CORES["muted"],
+                      annotation_text="Média dos dez anos anteriores")
     return _acabamento(fig, altura)
 
 

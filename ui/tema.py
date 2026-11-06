@@ -35,6 +35,7 @@ def aplicar():
     .mandacaru-kpi .detalhe {{ color: {CORES['muted']}; font-size: .8rem; }}
     .badge {{ color: var(--cor); border: 1px solid var(--cor); border-radius: {RAIOS['badge']};
       padding: .2rem .65rem; font-size: .8rem; font-weight: 650; display: inline-block; background: white; }}
+    .selo-simulado {{ font-size: .72rem; color: #57635A; border: 1px solid #DDDCD2; padding: .1rem .4rem; border-radius: 8px; }}
     .legenda {{ display: flex; flex-wrap: wrap; gap: {ESPACOS['pequeno']}; margin: .7rem 0 1.1rem; }}
     .sobretitulo {{ color: {CORES['primaria']}; letter-spacing: .13em; font-size: .72rem; font-weight: 750; text-transform: uppercase; }}
     .resumo {{ font-size: 1.15rem; line-height: 1.55; max-width: 75ch; margin: .3rem 0 1rem; }}
@@ -58,7 +59,13 @@ def escala_risco(cfg):
     return escala
 
 
-def legenda(cfg):
+def legenda(cfg, estimavel=True):
+    if not estimavel:
+        chuva = cfg['risco']['classes_chuva']
+        st.caption("Cedo para estimar perda — sinal de chuva (anomalia × normal). "
+                   f"Seguro: ≥{chuva['seguro']}%; atenção: {chuva['atencao']} a <{chuva['seguro']}%; "
+                   f"alerta: {chuva['alerta']} a <{chuva['atencao']}%; crítico: <{chuva['alerta']}%.")
+        return
     classes = sorted(cfg["risco"]["classes"].items(), key=lambda item: item[1])
     itens = []
     for i, (classe, minimo) in enumerate(classes):

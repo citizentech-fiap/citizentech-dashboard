@@ -56,12 +56,13 @@ class TestInterface(unittest.TestCase):
         app = self.app()
         self.assertEqual(app.selectbox(key="ano").value, self.cfg["safra"]["ano_demo_seca"])
         self.assertEqual([t.label for t in app.tabs], list(store.ABAS))
+        self.assertEqual(app.tabs[3].label, "Resumo da semana")
         self.assertEqual(app.title[0].value, "Onde agir primeiro?")
         self.assertTrue(any("seca histórica, modo demonstração" in c.value for c in app.markdown))
         self.assertTrue(any("Veja onde a seca está pior" in c.value for c in app.caption))
         self.assertFalse(next(e for e in app.expander if e.label == "Ajustes avançados").proto.expanded)
         self.assertFalse(next(e for e in app.expander if e.label == "Como calculamos").proto.expanded)
-        self.assertEqual(len(app.get("plotly_chart")), 4)
+        self.assertEqual(len(app.get("plotly_chart")), 5)
         app.slider(key="mes").set_value(3).run()
         self.assertTrue(any("31/03/2012" in c.value for c in app.caption))
         app.multiselect(key="ufs").set_value(["PE"])
@@ -243,27 +244,40 @@ class TestInterface(unittest.TestCase):
         self.assertEqual(arquivo.read_bytes(), antes)
         self.assertTrue(any("últimos dados locais" in w.value for w in app.warning))
 
-    def test_chat_com_fontes_e_indisponibilidade(self):
+    def test_resumo_template_cache_e_guardrail(self):
         app = self.app()
         self.aba(app, 3)
-        app.button(key="conectar_rag").click().run()
-        self.assertTrue(any("Assistente indisponível" in w.value for w in app.warning))
-        self.assertTrue(app.chat_input[0].disabled)
-        rag = Mock()
-        rag.llm.available = True
-        rag.answer.return_value = {"answer": "Leve o comprovante de CAF [1].", "abstained": False,
-                                  "citations": [{"n": 1, "titulo": "Garantia-Safra", "url": "https://www.gov.br/", "secao": "Documentos"}]}
-        with patch("state.dados.recurso_rag", return_value=(rag, "RAG disponível", RLock())):
-            app.run()
-            app.button(key="exemplo_pergunta").click().run()
+        with patch("providers.genai.gerar_texto", return_value=(None, "Sem IA")) as gerar:
+            app.button(key="gerar_resumo").click().run()
             self.sem_excecoes(app)
-            self.assertEqual(rag.answer.call_args.args[0], "Quais documentos levar para o Garantia-Safra?")
-            self.assertEqual(len(app.chat_message), 2)
-            self.assertEqual(len(app.get("link_button")), 1)
-            app.selectbox(key="servico").set_value("pronaf").run()
-            self.assertEqual(len(app.chat_message), 0)
-            app.chat_input[0].set_value("E para Pronaf?").run()
-        self.assertEqual(rag.answer.call_args.kwargs["service_id"], "pronaf")
+            self.assertTrue(app.text_area[0].value.startswith("Safra 2012"))
+            self.assertTrue(any("Resumo automático sem IA" in c.value for c in app.caption))
+            app.button(key="gerar_resumo").click().run()
+            gerar.assert_called_once()
+        app.text_area[0].set_value("Há 987654321 famílias.").run()
+        self.assertTrue(any("Números fora dos fatos" in w.value for w in app.warning))
+        app.button(key="template_resumo").click().run()
+        self.assertNotIn("987654321", app.text_area[0].value)
+        app.selectbox(key="servico").set_value("pronaf").run()
+        with patch("providers.genai.gerar_texto", return_value=("Há 987654321 famílias.", "")):
+            app.button(key="gerar_resumo").click().run()
+        self.assertTrue(any("Números fora dos fatos" in w.value for w in app.warning))
+        self.assertTrue(any("Gerado por IA" in c.value for c in app.caption))
+
+    def test_replay_janeiro_sem_valores_ausentes_e_selos(self):
+        app = self.app()
+        self.assertTrue(any("Perda real (IBGE)" in e.proto.body for e in app.get("html")))
+        self.assertTrue(any("simulado" in e.proto.body for e in app.get("html")))
+        app.selectbox(key="ano").set_value(2026).run()
+        app.slider(key="mes").set_value(1).run()
+        self.sem_excecoes(app)
+        textos = [e.value for tipo in (app.markdown, app.caption, app.warning, app.info) for e in tipo]
+        textos += [e.proto.body for e in app.get("html")]
+        for texto in textos:
+            self.assertNotRegex(texto, r"\b(?:nan|NaN|None)\b")
+        self.assertTrue(any("Cedo para estimar perda" in t for t in textos))
+        tabela = app.dataframe[0].value
+        self.assertFalse(tabela.isna().any().any())
 
     def test_ausencia_de_snapshots_e_eixo_do_criterio(self):
         with patch("state.dados.dados_locais.malhas", side_effect=FileNotFoundError), \

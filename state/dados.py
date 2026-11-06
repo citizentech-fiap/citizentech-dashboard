@@ -8,7 +8,7 @@ from threading import RLock
 import pandas as pd
 import streamlit as st
 
-from pipelines import clima, decisoes, demanda, recomendacoes, risco
+from pipelines import clima, decisoes, demanda, recomendacoes, risco, realidade
 from providers import dados_locais, genai, rpa
 from providers.config import carregar
 from providers.http import gravar_atomico
@@ -20,7 +20,7 @@ TTL = CFG["interface"]
 
 def versao_snapshots():
     """Inclui arquivo ausente e alteração externa nas chaves de cache."""
-    chaves = ("municipios", "malhas", "clima_diario", "climatologia", "pedidos_snapshot", "rpa_controle")
+    chaves = ("municipios", "malhas", "clima_diario", "climatologia", "pedidos_snapshot", "rpa_controle", "pam", "garantia_safra", "garantia_safra_cobertura")
     return tuple((str(CFG["paths"][k]), CFG["paths"][k].stat().st_mtime_ns
                   if CFG["paths"][k].exists() else None) for k in chaves)
 
@@ -68,7 +68,7 @@ def contexto(ano, cultura, ufs, servico, limiar, versao, corte=None):
     ind = indicadores(ano, cultura, corte, versao)
     ind = ind.loc[ind.uf.isin(ufs)].copy()
     todos, aviso = pedidos(versao)
-    if not todos.empty and ano not in todos.ano.unique():
+    if CFG["fontes"]["pedidos"] == "rpa" and not todos.empty and ano not in todos.ano.unique():
         aviso = (aviso + " " if aviso else "") + f"Não há pedidos na fonte para a safra {ano}. Demanda sem dados neste ano; os zeros não indicam ausência de necessidade."
     sel = todos.loc[todos.ano.eq(ano) & todos.uf.isin(ufs)].copy()
     if servico != "todos":
@@ -80,7 +80,8 @@ def contexto(ano, cultura, ufs, servico, limiar, versao, corte=None):
     # Limiar exploratório altera a seleção para ação, não a classificação calibrada.
     # O pipeline mantém o critério oficial e as regras administrativas de CAF.
     recs = recomendacoes.gerar(ind, dem, CFG, ano)
-    recs = [r for r in recs if r.tipo == "mutirao_caf" or r.evidencias["perda_estimada_pct"] >= limiar]
+    recs = [r for r in recs if r.tipo == "mutirao_caf" or not r.evidencias.get("estimavel", True)
+            or r.evidencias["perda_estimada_pct"] >= limiar]
     return {"quadro": quadro, "pedidos": sel, "demanda": dem, "recomendacoes": recs, "aviso": aviso}
 
 
@@ -106,17 +107,6 @@ def rascunhar(rec):
     with trava:
         texto = decisoes.rascunho_convocacao(rec, rag)
     return texto, motivo
-
-
-def perguntar(pergunta, historico, servico):
-    rag, motivo, trava = recurso_rag()
-    if rag is None:
-        return {"answer": motivo, "abstained": True, "citations": []}
-    try:
-        with trava:
-            return rag.answer(pergunta, history=historico, service_id=None if servico == "todos" else servico)
-    except Exception:
-        return {"answer": "O assistente está indisponível agora. Tente novamente mais tarde.", "abstained": True, "citations": []}
 
 
 def historico():
@@ -153,3 +143,23 @@ def salvar_decisao(rec, escolha, justificativa, mensagem, usuario):
         if arquivo is not None:
             arquivo.unlink(missing_ok=True)
         raise
+
+
+@st.cache_data(ttl=TTL["cache_dados_ttl_s"], show_spinner=False)
+def perda_real(cultura, versao):
+    return realidade.perda_real(cultura)
+
+
+@st.cache_data(ttl=TTL["cache_dados_ttl_s"], show_spinner=False)
+def pagamentos(versao):
+    return realidade.pagamentos()
+
+
+@st.cache_data(ttl=TTL["cache_dados_ttl_s"], show_spinner=False)
+def validacao(cultura, versao):
+    return realidade.validacao(cultura)
+
+
+@st.cache_data(ttl=TTL["cache_dados_ttl_s"], show_spinner=False)
+def cobertura_pagamentos(ano, versao):
+    return realidade._cobertura_pagamentos(ano, CFG)

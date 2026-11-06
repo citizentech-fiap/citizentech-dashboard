@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import streamlit as st
 
-ABAS = ("1 · Onde está pior", "2 · Por quê", "3 · O que fazer", "Tirar dúvidas")
+ABAS = ("1 · Onde está pior", "2 · Por quê", "3 · O que fazer", "Resumo da semana")
 
 
 def obter(chave, padrao=None):
@@ -20,10 +20,10 @@ def iniciar(cfg, ufs):
         "cultura": cfg["modelo_hidrico"]["cultura_padrao"],
         "limiar": cfg["risco"]["criterio_garantia_safra"], "servico": "todos",
         "mes": int(cfg["safra"]["fim_mes_dia"][:2]), "aba": ABAS[0],
-        "municipio": None, "rascunhos": {}, "conversas": {}, "rag_ativado": False,
+        "municipio": None, "rascunhos": {}, "resumos": {},
         "aviso_atualizacao": None, "notificacao": None,
         "acoes_visiveis": cfg["interface"]["recomendacoes_por_pagina"],
-        "formularios": {}, "contexto_decisao": None, "pergunta_exemplo": None,
+        "formularios": {}, "contexto_decisao": None,
     }
     for chave, valor in defaults.items():
         if chave not in st.session_state:
@@ -67,11 +67,6 @@ def mostrar_mais(quantidade):
     definir("acoes_visiveis", obter("acoes_visiveis") + quantidade)
 
 
-def enviar_exemplo(pergunta):
-    definir("rag_ativado", True)
-    definir("pergunta_exemplo", pergunta)
-
-
 def guardar_rascunho(id_rec, valor):
     rascunhos = dict(obter("rascunhos", {}))
     if valor is None:
@@ -79,12 +74,6 @@ def guardar_rascunho(id_rec, valor):
     else:
         rascunhos[id_rec] = valor
     definir("rascunhos", rascunhos)
-
-
-def adicionar_mensagem(contexto, mensagem):
-    conversas = deepcopy(obter("conversas", {}))
-    conversas.setdefault(contexto, []).append(mensagem)
-    definir("conversas", conversas)
 
 
 def consumir_notificacao():

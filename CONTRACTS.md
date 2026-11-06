@@ -161,3 +161,24 @@ para rede, 429 e 5xx. HTTP 405 recebe tentativas espaçadas por
 `fontes.backoff_download_s` exponencial (60/120/240 s por padrão), pois o acesso observado
 voltou após intervalo. CAPTCHA não é resolvido nem contornado; se o servidor continuar
 bloqueando, a etapa avisa e sai com erro, preservando os agregados já concluídos.
+
+
+## Resumo da semana
+
+`pipelines.resumo.fatos(indicadores, demanda, recomendacoes, historico_decisoes, cfg, ano,
+ate_data, realidade=None)` retorna JSON serializável: safra, data de corte, `estimavel`,
+municípios por classe, cinco mais críticos (perda quando estimável, anomalia antes disso),
+ações pendentes por tipo (exclui IDs decididos), decisões da safra e municípios selecionados
+nos últimos sete dias em relação ao relógio atual UTC (aprovadas, ajustadas, recusadas),
+travados sem CAF com `simulado` explícito e mediana de perda real, somente se publicada.
+Os indicadores fornecidos determinam o recorte; a aba resumo usa safra completa, como a fila de ações.
+Retrospectiva não entra no gerador de recomendações. Nenhum pedido individual vai ao LLM.
+
+`numeros(texto)` normaliza números com decimal por vírgula ou ponto, milhares brasileiros,
+percentuais e componentes de datas. `numeros_desconhecidos(texto, fatos)` compara os valores
+normalizados com os presentes no JSON: é um guardrail de pertinência numérica, não uma
+verificação semântica de relações entre números. Valores ausentes nos fatos geram aviso e
+opção de template. O gestor revisa o texto editável antes de baixar. O template tem seis
+frases e usa somente os agregados. Cache por SHA-256 do JSON ordenado na sessão evita nova
+chamada para fatos iguais; `make_llm` mantém seu cache ligado e seu fallback configurado.
+Falhas de pacote, chave, rede ou geração retornam motivo curto e template, sem traceback.

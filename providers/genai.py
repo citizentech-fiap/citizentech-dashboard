@@ -7,6 +7,28 @@ import sys
 from providers.config import carregar
 
 
+def gerar_texto(system, user):
+    """Usa configuração, chave e cache do genAI; falha recuperável sem traceback."""
+    pasta = str(carregar()["paths"]["genai_path"])
+    sys.path.insert(0, pasta)
+    try:
+        config = import_module("citizen_rag.config")
+        modulo = import_module("citizen_rag.llm")
+        cfg = config.load_config()
+        cfg.setdefault("llm", {})["cache"] = True
+        llm = modulo.make_llm(cfg)
+        if not llm.available:
+            return None, "IA indisponível; usando resumo automático sem IA."
+        resposta = llm.complete(system, user)
+        if resposta.ok and resposta.text.strip():
+            return resposta.text.strip(), ""
+        return None, "Não foi possível gerar com IA; usando resumo automático sem IA."
+    except Exception:
+        return None, "IA indisponível; usando resumo automático sem IA."
+    finally:
+        sys.path.remove(pasta)
+
+
 def criar_rag():
     """Retorna (assistente, motivo); falhas e índice indisponível são recuperáveis.
 
