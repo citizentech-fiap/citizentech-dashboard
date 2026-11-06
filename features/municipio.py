@@ -1,7 +1,9 @@
 """Raio-x: evidências climáticas e obstáculos de atendimento municipais."""
+import pandas as pd
 import streamlit as st
 
 from pipelines.demanda import por_servico
+from pipelines.risco import classificar
 from features.decisoes import acoes_municipio
 from state import dados, store
 from ui.componentes import badge_risco, como_calculamos, kpi, percentual, selo_simulado
@@ -24,7 +26,7 @@ def renderizar(ctx, cfg, filtros, versao):
     st.caption(f"Safra completa {filtros['ano']} · {cfg['modelo_hidrico']['culturas'][filtros['cultura']]['nome']}")
     a, b, c, d = st.columns(4)
     with a:
-        kpi("Perda estimada", percentual(linha.perda_estimada_pct), cor=linha.classe)
+        kpi("Perda estimada", percentual(linha.perda_estimada_pct, 0), cor=linha.classe)
         if not linha.estimavel:
             st.caption("estimativa a partir de 1º de março")
     with b:
@@ -99,9 +101,11 @@ def retrospectiva(codigo, linha, cfg, filtros, versao):
             st.caption(f"Produção de {filtros['cultura']} (IBGE/PAM) · safra {ano} em vermelho")
             r1, r2 = st.columns(2)
             with r1:
-                kpi("Perda real (IBGE)", percentual(valor, 0), "produção × média dos dez anos anteriores")
+                kpi("Perda real (IBGE)", percentual(valor, 0), "produção × média dos dez anos anteriores",
+                    classificar(valor, cfg) if pd.notna(valor) else "seguro")
             with r2:
-                kpi("Perda estimada pelo painel", percentual(linha.perda_estimada_pct, 0), "só chuva (modelo hídrico)")
+                kpi("Perda estimada pelo painel", percentual(linha.perda_estimada_pct, 0), "só chuva (modelo hídrico)",
+                    linha.classe)
             st.caption("Perda real relativa à produção média dos dez anos anteriores; retrospectiva, sem alterar prioridades.")
         except (OSError, ValueError):
             st.warning("Produção IBGE indisponível no arquivo local.")

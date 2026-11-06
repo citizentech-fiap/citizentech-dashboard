@@ -2,6 +2,7 @@
 import pandas as pd
 import streamlit as st
 
+from pipelines.risco import classificar
 from state import dados, store
 from ui.componentes import abrir_raio_x, badge_risco, como_calculamos, kpi, percentual, selo_simulado
 from ui import tema
@@ -45,7 +46,9 @@ def renderizar(ctx, cfg, filtros, versao, malhas):
         kpi("Pedidos de agricultores", f"{quadro.pedidos.sum():,}".replace(",", "."), "Pedidos da safra inteira")
         selo_simulado()
     with d:
-        kpi("Perda real (IBGE)", percentual(quadro.perda_producao_pct.median(), 0), "Mediana municipal · safra completa")
+        mediana_real = quadro.perda_producao_pct.median()
+        kpi("Perda real (IBGE)", percentual(mediana_real, 0), "Mediana municipal · safra completa",
+            classificar(mediana_real, cfg) if pd.notna(mediana_real) else "seguro")
         if filtros["ano"] > cfg["fontes"]["pam_fim"]:
             st.caption("Dados reais ainda não publicados (o IBGE publica a safra no ano seguinte)")
     mapa, lista = st.columns([2.1, 1])

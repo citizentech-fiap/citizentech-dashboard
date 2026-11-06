@@ -107,11 +107,11 @@ def validacao_retrospectiva(cfg, filtros):
     st.markdown(f"**Placar no critério de {cfg['risco']['criterio_garantia_safra']}%** "
                 "(cada ponto é um município em uma safra)")
     q1, q2, q3, q4 = st.columns(4)
-    q1.metric("Acertou: houve perda", int(matriz.loc[True, True]))
-    q2.metric("Acertou: não houve perda", int(matriz.loc[False, False]))
-    q3.metric("Perda que o modelo não viu", int(matriz.loc[False, True]))
+    q1.metric("Acerto: perda", int(matriz.loc[True, True]))
+    q2.metric("Acerto: sem perda", int(matriz.loc[False, False]))
+    q3.metric("Perda não vista", int(matriz.loc[False, True]))
     q4.metric("Alarme falso", int(matriz.loc[True, False]))
-    correlacao = f"{placar['spearman']:.2f}" if pd.notna(placar['spearman']) else "indisponível"
+    correlacao = f"{placar['spearman']:.2f}".replace(".", ",") if pd.notna(placar['spearman']) else "indisponível"
     st.caption(f"Critério {cfg['risco']['criterio_garantia_safra']}% · Acurácia: {percentual(placar['acuracia'] * 100)} · "
                f"Spearman: {correlacao}")
     st.caption(f"{placar['pares_validos']} pares válidos · {placar['pares_excluidos']} excluídos por falta de medida.")

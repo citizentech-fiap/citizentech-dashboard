@@ -64,6 +64,11 @@ def producao_real(quadro, ano, anos_media, altura):
     fig = px.bar(recorte, x="ano", y="producao_t", labels={"ano": "Ano", "producao_t": "Produção (t)"})
     fig.update_traces(marker_color=cores, hovertemplate="%{x}: %{y:,.0f} t<extra></extra>")
     fig.update_xaxes(dtick=1)
+    atual = recorte.loc[recorte.ano.eq(ano), "producao_t"]
+    if not atual.empty and pd.notna(atual.iloc[0]):
+        fig.add_annotation(x=ano, y=atual.iloc[0], yshift=12, showarrow=False,
+                           text=f"<b>{atual.iloc[0]:,.0f} t</b>".replace(",", "."),
+                           font=dict(color=CORES["critico"]))
     media = recorte.loc[recorte.ano.eq(ano), "producao_media_10_anos_t"]
     if not media.empty and pd.notna(media.iloc[0]):
         fig.add_hline(y=media.iloc[0], line_dash="dash", line_color=CORES["muted"],

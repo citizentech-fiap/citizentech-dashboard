@@ -8,7 +8,7 @@ Global Solution 2026 · FIAP · **Front-end e Mobile Development em Sistemas de 
 | Ricardo de Paiva Melo | RM565522 |
 | Jonas Alaf | RM566479 |
 
-![Onde está pior: a seca de 2012](docs/img/onde-esta-pior.jpg)
+![Onde está pior: a seca de 2012, com a perda real do IBGE ao lado da estimada](docs/img/onde-esta-pior.jpg)
 
 ## O problema
 
@@ -71,6 +71,8 @@ IBGE citado na Carta do Garantia-Safra). Resultado no critério de 40% (`python 
 |---|---:|---:|
 | **Painel disse < 40%** | 116 (acertou: não houve perda) | 83 (perda que o modelo não viu) |
 | **Painel disse ≥ 40%** | 36 (alarme falso) | 87 (acertou: houve perda) |
+
+![Placar estimado × real em "Como calculamos"](docs/img/placar.jpg)
 
 Acurácia **63%** (feijão: 58%), correlação de Spearman 0,47. O modelo **acerta as grandes secas** (2012: 23
 estimados × 22 reais; 2013 e 2015 também batem), mas **não vê as perdas de 2016 a 2019** e dá alarme em 2021.
@@ -161,7 +163,7 @@ O painel foi desenhado para quem nunca o viu: as abas são os passos, e a decis�
 Na barra lateral ficam só **Safra** e **Estados**; cultura, limiar, serviço e atualização dos dados estão em
 "Ajustes avançados". O método fica em "Como calculamos". O layout funciona também na largura de celular.
 
-| Por quê (município) | O que fazer |
+| Por quê: o que aconteceu de fato em Patos (2012) | O que fazer: ações para aprovar |
 |---|---|
 | ![Por quê](docs/img/por-que.jpg) | ![O que fazer](docs/img/o-que-fazer.jpg) |
 
