@@ -37,6 +37,7 @@ class TestInterface(unittest.TestCase):
     def app(self):
         app = AppTest.from_file(str(RAIZ / "app.py"), default_timeout=30).run()
         self.sem_excecoes(app)
+        app.text_input(key="gestor").set_value("gestor-teste").run()
         return app
 
     def sem_excecoes(self, app):
@@ -51,6 +52,38 @@ class TestInterface(unittest.TestCase):
 
     def registros(self):
         return decisoes.listar(self.cfg["paths"]["decisoes"])
+
+    def test_gestor_obrigatorio_e_selo(self):
+        app = self.app()
+        app.text_input(key="gestor").set_value("").run()
+        self.aba(app, 2)
+        botoes = [b for b in app.button if (b.key or "").startswith("aprovar_")]
+        self.assertTrue(botoes)
+        self.assertTrue(all(b.disabled for b in botoes))
+        chave = botoes[0].key
+        app.text_input(key="gestor").set_value("EMATER-teste").run()
+        app.button(key=chave).click().run()
+        self.sem_excecoes(app)
+        self.assertTrue(any("Aprovada · EMATER-teste" in e.value for e in app.success))
+        self.assertFalse(any(b.key == chave for b in app.button))
+
+    def test_sem_repositorios_vizinhos(self):
+        from providers import genai
+        cfg = carregar()
+        cfg["fontes"]["pedidos"] = "rpa"
+        for chave in ("rpa_controle", "genai_path"):
+            cfg["paths"][chave] = Path(self.temp.name) / "ausente" / chave
+        with patch("state.dados.CFG", cfg), patch("providers.rpa.carregar", return_value=cfg), \
+                patch("providers.genai.carregar", return_value=cfg), \
+                patch("providers.genai.import_module", side_effect=ModuleNotFoundError("ausente")):
+            app = self.app()
+            self.assertTrue(any("sintéticos" in w.value for w in app.warning))
+            for indice in (1, 2, 3):
+                self.aba(app, indice)
+            app.button(key="gerar_resumo").click().run()
+            self.sem_excecoes(app)
+            self.assertTrue(any("sem IA" in c.value for c in app.caption))
+            self.assertIsNone(genai.criar_rag()[0])
 
     def test_percurso_filtros_replay_e_evidencias(self):
         app = self.app()
@@ -165,7 +198,7 @@ class TestInterface(unittest.TestCase):
         registro = self.registros()[0]
         self.assertEqual(registro["id"], id_rec)
         self.assertEqual(registro["decisao"], "aprovada")
-        self.assertEqual(registro["usuario"], self.cfg["decisoes"]["usuario_padrao"])
+        self.assertEqual(registro["usuario"], "gestor-teste")
         self.assertIn("Sede da EMATER", registro["mensagem"])
         self.assertIn("Plano:", registro["mensagem"])
         self.assertEqual(len(self.cfg["paths"]["decisoes"].read_text(encoding="utf-8").splitlines()), 1)
@@ -209,7 +242,7 @@ class TestInterface(unittest.TestCase):
                                        "todos", 40, dados.versao_snapshots())["recomendacoes"])
         self.assertEqual(sum((b.key or "").startswith("aprovar_") for b in app.button), 5)
         self.assertFalse(any(s.label == "Página de recomendações" for s in app.selectbox))
-        self.assertFalse(any(t.key == "gestor" for t in app.text_input))
+        self.assertTrue(any(t.key == "gestor" for t in app.text_input))
         app.button(key="mostrar_mais").click().run()
         self.assertEqual(sum((b.key or "").startswith("aprovar_") for b in app.button), 10)
         id_rec = next(b.key.removeprefix("aprovar_") for b in app.button if (b.key or "").startswith("aprovar_vistoria"))
@@ -237,7 +270,7 @@ class TestInterface(unittest.TestCase):
         antes = arquivo.read_bytes()
         app = self.app()
         app.multiselect(key="ufs").set_value(["SE"]).run()
-        with patch("scripts.preparar_dados.open_meteo.diario", side_effect=OSError("offline")) as diario:
+        with patch("providers.atualizacao_clima.open_meteo.diario", side_effect=OSError("offline")) as diario:
             next(b for b in app.button if b.label == "Atualizar dados do Open-Meteo").click().run()
         self.sem_excecoes(app)
         diario.assert_called_once()

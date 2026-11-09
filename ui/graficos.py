@@ -7,13 +7,14 @@ from matplotlib.colors import ListedColormap
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
 
+from formatacao import numero, percentual
 from ui.tema import CORES, NOMES_DOCUMENTOS, NOMES_SERVICOS, RISCOS, escala_risco
 
 MESES = ("Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez")
 
 
 def _acabamento(fig, altura):
-    fig.update_layout(height=altura, margin=dict(l=12, r=12, t=15, b=10),
+    fig.update_layout(separators=",.", height=altura, margin=dict(l=12, r=12, t=15, b=10),
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       font=dict(family="Arial, sans-serif", color=CORES["texto"]),
                       legend=dict(orientation="h", y=-.23, x=0), hovermode="x unified")
@@ -30,6 +31,8 @@ def mapa_perdas(quadro, malhas, cfg, altura):
         lambda x: f"{x:.0f}%" if pd.notna(x) else "não publicada/disponível")
     hover = {"cod_ibge": False, "risco": True, "chuva_mm": ":.0f", "normal_mm": ":.0f",
              "pedidos": True, "perda_real_rotulo": True}
+    if "acao_aprovada" in exibicao:
+        hover["acao_aprovada"] = True
     campo = "perda_estimada_pct" if estimavel else "anomalia_pct"
     hover[campo] = ":.1f"
     parametros = dict(color=campo, range_color=(0, 100), color_continuous_scale=escala_risco(cfg)) if estimavel else dict(
@@ -39,7 +42,7 @@ def mapa_perdas(quadro, malhas, cfg, altura):
         **parametros, hover_name="municipio", hover_data=hover,
         labels={"perda_estimada_pct": "Perda estimada (%)", "anomalia_pct": "Anomalia de chuva (%)",
                 "perda_real_rotulo": "Perda real IBGE", "chuva_mm": "Chuva (mm)",
-                "normal_mm": "Normal (mm)", "pedidos": "Pedidos", "risco": "Classe"},
+                "normal_mm": "Normal (mm)", "pedidos": "Pedidos", "risco": "Classe", "acao_aprovada": "Ação aprovada"},
         map_style=cfg["interface"].get("mapa_estilo", "carto-positron"), zoom=cfg["interface"]["mapa_zoom"],
         center=cfg["interface"]["mapa_centro"], opacity=0.85)
     fig.update_traces(marker_line_width=1.2, marker_line_color="#3a3a3a")
@@ -50,10 +53,13 @@ def mapa_perdas(quadro, malhas, cfg, altura):
 
 def dispersao_validacao(quadro, altura):
     pares = quadro.dropna(subset=["perda_estimada_pct", "perda_producao_pct"])
+    if pares.empty:
+        return None
     fig = px.scatter(pares, x="perda_estimada_pct", y="perda_producao_pct", hover_name="municipio",
                      hover_data=["ano"], labels={"perda_estimada_pct": "Perda estimada (%)",
                      "perda_producao_pct": "Perda real IBGE (%)"})
-    fig.update_traces(marker=dict(color=CORES["primaria"], opacity=.55, size=7))
+    textos = [f"{r.municipio}/{r.uf}<br>Safra {r.ano}<br>Estimada: {percentual(r.perda_estimada_pct)}<br>Real IBGE: {percentual(r.perda_producao_pct)}" + (f"<br>Chuva: {numero(r.chuva_mm)} mm" if hasattr(r, "chuva_mm") else "") for r in pares.itertuples()]
+    fig.update_traces(text=textos, hovertemplate="%{text}<extra></extra>", marker=dict(color=CORES["primaria"], opacity=.55, size=7))
     fig.add_shape(type="line", x0=0, y0=0, x1=100, y1=100, line=dict(dash="dot", color=CORES["muted"]))
     return _acabamento(fig, altura)
 
@@ -164,3 +170,14 @@ def calendario_seco(serie, limiar_mm):
     for borda in eixo.spines.values():
         borda.set_visible(False)
     return figura
+
+
+def barras_contagens(quadro, altura):
+    """Contagens já agregadas pelas telas; vazio não vira dado fictício."""
+    if quadro.empty:
+        return None
+    fig = px.bar(quadro, x="categoria", y="quantidade", text="quantidade",
+                 labels={"categoria": "", "quantidade": "Quantidade"},
+                 color_discrete_sequence=[CORES["primaria"]])
+    fig.update_yaxes(dtick=1)
+    return _acabamento(fig, altura)

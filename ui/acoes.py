@@ -1,9 +1,18 @@
-"""Interação reutilizada nos cartões: sugestão, ajuste, recusa e revisão humana."""
+"""Interação reutilizada nos cartões: sugestão, ajuste, recusa e revisão humana.
+
+A UI não grava nem gera texto: recebe `Servicos` (callbacks) da feature que a compõe.
+"""
 from datetime import date, timedelta
+from typing import Callable, NamedTuple
 
 import streamlit as st
 
-from state import dados, store
+from state import store
+
+
+class Servicos(NamedTuple):
+    salvar: Callable      # (rec, escolha, justificativa, mensagem, usuario) -> registro
+    rascunhar: Callable   # (rec) -> (mensagem, motivo)
 
 
 def sugestao(rec, cfg):
@@ -13,9 +22,9 @@ def sugestao(rec, cfg):
             "plano": rec.acao_sugerida, "justificativa": ""}
 
 
-def _registrar(rec, escolha, justificativa, mensagem, cfg):
+def _registrar(rec, escolha, justificativa, mensagem, servicos):
     try:
-        dados.salvar_decisao(rec, escolha, justificativa, mensagem, cfg["decisoes"]["usuario_padrao"])
+        servicos.salvar(rec, escolha, justificativa, mensagem, store.obter("gestor", ""))
     except (OSError, ValueError):
         st.error("Não foi possível gravar a decisão. Confira o histórico e tente novamente. Sua revisão foi preservada.")
         return
@@ -25,7 +34,7 @@ def _registrar(rec, escolha, justificativa, mensagem, cfg):
     st.rerun()
 
 
-def _preparar(rec, campos, escolha, cfg, filtros):
+def _preparar(rec, campos, escolha, filtros, servicos):
     if campos["data"] is None or campos["data"] < date.today() or not campos["local"].strip() or not campos["plano"].strip():
         st.error("Informe data a partir de hoje, local, horário e plano da ação.")
         return
@@ -35,12 +44,12 @@ def _preparar(rec, campos, escolha, cfg, filtros):
     logistica = (f"Data: {campos['data']:%d/%m/%Y}\nLocal e horário: {campos['local'].strip()}\n"
                  f"Plano: {campos['plano'].strip()}")
     if rec.tipo != "convocacao":
-        _registrar(rec, escolha, justificativa, logistica, cfg)
+        _registrar(rec, escolha, justificativa, logistica, servicos)
         return
     lugar = st.empty()
     lugar.info("▰ ▰ ▰ Preparando o texto para sua revisão…")
     with st.spinner("Preparando a convocação…"):
-        mensagem, motivo = dados.rascunhar(rec)
+        mensagem, motivo = servicos.rascunhar(rec)
     lugar.empty()
     mensagem = mensagem.replace("Data, horário e local: a confirmar pelo gestor.", logistica)
     store.guardar_rascunho(rec.id, {"escolha": escolha, "justificativa": justificativa,
@@ -48,7 +57,7 @@ def _preparar(rec, campos, escolha, cfg, filtros):
     st.rerun()
 
 
-def _revisar(rec, rascunho, cfg):
+def _revisar(rec, rascunho, servicos):
     st.caption("Revise a mensagem antes de confirmar. Ela será salva como rascunho, sem envio automático.")
     with st.form(f"revisar_{rec.id}"):
         mensagem = st.text_area("Mensagem aos agricultores", value=rascunho["mensagem"],
@@ -65,19 +74,23 @@ def _revisar(rec, rascunho, cfg):
             st.error("Revise o texto e marque a confirmação antes de salvar.")
             return
         escolha = "editada" if mensagem != rascunho["mensagem"] else rascunho["escolha"]
-        _registrar(rec, escolha, rascunho["justificativa"], mensagem, cfg)
+        _registrar(rec, escolha, rascunho["justificativa"], mensagem, servicos)
 
 
-def renderizar(rec, cfg, filtros):
+def renderizar(rec, cfg, filtros, servicos):
+    bloqueada = not store.obter("gestor", "").strip()
+    dica = "Preencha a identificação funcional do gestor na barra lateral." if bloqueada else None
     a, b, c = st.columns(3)
     with a:
-        aprovar = st.button("Aprovar", type="primary", key=f"aprovar_{rec.id}")
+        aprovar = st.button("Aprovar", type="primary", key=f"aprovar_{rec.id}", disabled=bloqueada, help=dica)
     with b:
-        ajustar = st.button("Ajustar", key=f"ajustar_{rec.id}")
+        ajustar = st.button("Ajustar", key=f"ajustar_{rec.id}", disabled=bloqueada, help=dica)
     with c:
-        recusar = st.button("Recusar", key=f"recusar_{rec.id}")
+        recusar = st.button("Recusar", key=f"recusar_{rec.id}", disabled=bloqueada, help=dica)
+    if bloqueada:
+        return
     if aprovar:
-        _preparar(rec, sugestao(rec, cfg), "aprovada", cfg, filtros)
+        _preparar(rec, sugestao(rec, cfg), "aprovada", filtros, servicos)
     if ajustar or recusar:
         anterior = store.formulario(rec.id) or {}
         store.formulario(rec.id, {"modo": "ajustar" if ajustar else "recusar",
@@ -85,7 +98,7 @@ def renderizar(rec, cfg, filtros):
         store.guardar_rascunho(rec.id, None)
     rascunho = store.obter("rascunhos").get(rec.id)
     if rascunho:
-        _revisar(rec, rascunho, cfg)
+        _revisar(rec, rascunho, servicos)
         return
     formulario = store.formulario(rec.id) or {}
     modo = formulario.get("modo")
@@ -98,7 +111,7 @@ def renderizar(rec, cfg, filtros):
                 st.error("Explique o motivo da recusa; o motivo é obrigatório.")
             else:
                 contexto = f"Safra {filtros['ano']} · cultura {filtros['cultura']} · serviço {filtros['servico']} · alerta {filtros['limiar']}%"
-                _registrar(rec, "rejeitada", f"{motivo.strip()}\n{contexto}", "", cfg)
+                _registrar(rec, "rejeitada", f"{motivo.strip()}\n{contexto}", "", servicos)
     elif modo == "ajustar":
         campos = formulario["campos"]
         with st.form(f"ajuste_{rec.id}"):
@@ -114,4 +127,4 @@ def renderizar(rec, cfg, filtros):
         if salvar:
             campos = dict(data=data, local=local, plano=plano, justificativa=justificativa)
             store.formulario(rec.id, {"modo": "ajustar", "campos": campos})
-            _preparar(rec, campos, "editada", cfg, filtros)
+            _preparar(rec, campos, "editada", filtros, servicos)

@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import pandas as pd
 
+from formatacao import numero
 from pipelines.recomendacoes import ROTULOS_TIPOS
 
 CLASSES = {"seguro": "seguros", "atencao": "em atenção", "alerta": "em alerta", "critico": "críticos"}
@@ -68,7 +69,7 @@ def template(fatos):
     pendentes = ", ".join(f"{v} × {k.lower()}" for k, v in fatos["acoes_pendentes"].items()) or "nenhuma ação"
     caf = fatos["travados_sem_caf"]
     decisoes = fatos["decisoes_ultimos_7_dias"]
-    retrospectiva = (f"; a mediana da perda real IBGE foi {fatos['realidade']['mediana_perda_real_pct']}% na safra completa"
+    retrospectiva = (f"; a mediana da perda real IBGE foi {numero(fatos['realidade']['mediana_perda_real_pct'])}% na safra completa"
                      if 'realidade' in fatos else '')
     return (f"Safra {fatos['safra']}, até {fatos['data_corte']}: municípios {classes}. "
             f"{sinal}{retrospectiva}. Aguardam decisão: {pendentes}. "
@@ -76,3 +77,12 @@ def template(fatos):
             f"Decisões na última semana: {decisoes['aprovadas']} aprovadas, {decisoes['ajustadas']} ajustadas e {decisoes['recusadas']} recusadas. "
             "Próximas ações: decidir as vistorias pendentes, começando pelos municípios mais críticos; "
             "organizar os mutirões do CAF; preparar as convocações aprovadas.")
+
+
+def fatos_exibicao(valor):
+    """Mantém fatos numéricos para verificação; formata só a cópia de apresentação."""
+    if isinstance(valor, dict):
+        return {k: fatos_exibicao(v) for k, v in valor.items()}
+    if isinstance(valor, list):
+        return [fatos_exibicao(v) for v in valor]
+    return numero(valor) if isinstance(valor, float) else valor

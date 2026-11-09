@@ -20,7 +20,7 @@ def iniciar(cfg, ufs):
         "cultura": cfg["modelo_hidrico"]["cultura_padrao"],
         "limiar": cfg["risco"]["criterio_garantia_safra"], "servico": "todos",
         "mes": int(cfg["safra"]["fim_mes_dia"][:2]), "aba": ABAS[0],
-        "municipio": None, "rascunhos": {}, "resumos": {},
+        "gestor": "", "atualizacoes": {}, "municipio": None, "rascunhos": {}, "resumos": {},
         "aviso_atualizacao": None, "notificacao": None,
         "acoes_visiveis": cfg["interface"]["recomendacoes_por_pagina"],
         "formularios": {}, "contexto_decisao": None,
@@ -80,3 +80,18 @@ def consumir_notificacao():
     aviso = obter("notificacao")
     definir("notificacao", None)
     return aviso
+
+
+def iniciar_atualizacao(chave):
+    registros = dict(obter("atualizacoes", {}))
+    if chave in registros:
+        return False
+    registros[chave] = "em andamento"
+    definir("atualizacoes", registros)
+    return True
+
+
+def finalizar_atualizacao(chave):
+    registros = dict(obter("atualizacoes", {}))
+    registros[chave] = "concluída"
+    definir("atualizacoes", registros)

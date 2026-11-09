@@ -2,11 +2,12 @@
 import pandas as pd
 import streamlit as st
 
+from features.metodo import como_calculamos
 from pipelines.demanda import por_servico
 from pipelines.risco import classificar
 from features.decisoes import acoes_municipio
 from state import dados, store
-from ui.componentes import badge_risco, como_calculamos, kpi, percentual, selo_simulado
+from ui.componentes import badge_risco, kpi, percentual, selo_simulado
 from ui.graficos import barras_documentos, barras_servicos, calendario_seco, grafico_chuva, producao_real
 
 
@@ -39,7 +40,7 @@ def renderizar(ctx, cfg, filtros, versao):
             _cor_faixa(linha.maior_seca_dias, (15, 30, 60)))
     with d:
         kpi("Agricultores sem CAF", str(linha.travados_sem_caf), "Pedidos travados", "alerta" if linha.travados_sem_caf else "seguro")
-        selo_simulado()
+        selo_simulado(simulado=cfg["fontes"]["pedidos"] != "rpa")
     retrospectiva(codigo, linha, cfg, filtros, versao)
     with st.spinner("Preparando as evidências do município…"):
         serie = dados.serie(codigo, filtros["ano"], versao)
@@ -57,7 +58,7 @@ def renderizar(ctx, cfg, filtros, versao):
     figura.clear()
     st.caption("Cada quadrado é um dia. Verde: com chuva; laranja: seco.")
     st.markdown("### O que impede o atendimento?")
-    selo_simulado()
+    selo_simulado(simulado=cfg["fontes"]["pedidos"] != "rpa")
     st.caption(f"{len(pedidos)} pedidos · serviço selecionado na barra lateral")
     colunas = st.columns(2)
     for coluna, (titulo, fig) in zip(colunas, (

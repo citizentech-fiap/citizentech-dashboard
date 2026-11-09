@@ -107,3 +107,20 @@ if __name__ == "__main__":
                 print(f"AVISO: {aviso}")
         except (FileNotFoundError, ValueError) as erro:
             print(f"{cultura}: dados indisponíveis: {erro}")
+
+
+def recortar_validacao(placar, cfg, filtros):
+    """Recalcula métricas apenas para UF/safra, sem mutar o placar recebido."""
+    placar = dict(placar)
+    quadro = placar["dados"]
+    quadro = quadro.loc[quadro.uf.isin(filtros["ufs"]) & quadro.ano.eq(filtros["ano"])].copy()
+    pares = quadro.dropna(subset=["perda_estimada_pct", "perda_producao_pct"])
+    limiar = cfg["risco"]["criterio_garantia_safra"]
+    a, b = pares.perda_estimada_pct.ge(limiar), pares.perda_producao_pct.ge(limiar)
+    matriz = pd.crosstab(a, b).reindex(index=[False, True], columns=[False, True], fill_value=0)
+    divergencias = pares.assign(divergencia_pp=(pares.perda_estimada_pct - pares.perda_producao_pct).abs())
+    placar.update(dados=quadro, matriz=matriz, acuracia=(a == b).mean(),
+                  spearman=pares.perda_estimada_pct.rank().corr(pares.perda_producao_pct.rank()) if len(pares) > 1 else float("nan"),
+                  pares_validos=len(pares), pares_excluidos=len(quadro)-len(pares),
+                  divergencias=divergencias.nlargest(10, "divergencia_pp"))
+    return placar

@@ -2,9 +2,10 @@
 import pandas as pd
 import streamlit as st
 
+from features.metodo import como_calculamos
 from pipelines.risco import classificar
 from state import dados, store
-from ui.componentes import abrir_raio_x, badge_risco, como_calculamos, kpi, percentual, selo_simulado
+from ui.componentes import abrir_raio_x, badge_risco, kpi, percentual, selo_simulado
 from ui import tema
 from ui.graficos import MESES, grafico_chuva, mapa_perdas
 
@@ -27,15 +28,27 @@ def renderizar(ctx, cfg, filtros, versao, malhas):
     except (OSError, ValueError):
         quadro["perda_producao_pct"] = float("nan")
         st.warning("Produção IBGE indisponível; recupere o arquivo local.")
+    try:
+        registros = dados.historico()
+    except (OSError, ValueError):
+        registros = []
+        st.warning("Histórico indisponível; ações aprovadas não puderam ser marcadas.")
+    # id das recomendações: "<tipo>-<cod_ibge>-<safra>" (pipelines/recomendacoes.py)
+    aprovados = {int(r["id"].rsplit("-", 2)[1]) for r in registros
+                 if r["id"].endswith(f"-{filtros['ano']}") and r["decisao"] in ("aprovada", "editada")}
+    quadro["acao_aprovada"] = quadro.cod_ibge.astype(int).isin(aprovados).map({True: "Sim", False: "Não"})
     tema.legenda(cfg, estimavel)
     oficial = cfg["risco"]["criterio_garantia_safra"]
-    alerta = quadro.perda_estimada_pct.ge(oficial)
+    alerta = quadro.perda_estimada_pct.ge(filtros["limiar"])
     if not estimavel:
         alerta = quadro.classe.eq("critico")
     a, b, c, d = st.columns(4)
     with a:
-        kpi(f"Municípios com perda ≥ {oficial}%" if estimavel else "Municípios com chuva muito abaixo do normal",
-            f"{alerta.sum()} de {len(quadro)}", cor="alerta" if alerta.any() else "seguro")
+        rotulo = (f"Municípios com perda ≥ {filtros['limiar']}%" if estimavel
+                  else "Municípios com chuva muito abaixo do normal")
+        legenda = (f"Limiar exploratório; critério oficial: {oficial}%"
+                   if estimavel and filtros["limiar"] != oficial else "")
+        kpi(rotulo, f"{alerta.sum()} de {len(quadro)}", legenda, cor="alerta" if alerta.any() else "seguro")
     with b:
         if estimavel:
             kpi("Maior perda", percentual(quadro.perda_estimada_pct.max(), 0), quadro.iloc[0].municipio, quadro.iloc[0].classe)
@@ -44,7 +57,7 @@ def renderizar(ctx, cfg, filtros, versao, malhas):
                 f"{quadro.iloc[0].municipio} · perda estimada a partir de 1º/03", quadro.iloc[0].classe)
     with c:
         kpi("Pedidos de agricultores", f"{quadro.pedidos.sum():,}".replace(",", "."), "Pedidos da safra inteira")
-        selo_simulado()
+        selo_simulado(simulado=cfg["fontes"]["pedidos"] != "rpa")
     with d:
         mediana_real = quadro.perda_producao_pct.median()
         kpi("Perda real (IBGE)", percentual(mediana_real, 0), "Mediana municipal · safra completa",
@@ -76,14 +89,14 @@ def renderizar(ctx, cfg, filtros, versao, malhas):
                 else:
                     st.write(f"{chuva.capitalize()} · {linha.pedidos} pedidos")
                     st.caption("Perda estimada a partir de 1º de março")
-                selo_simulado()
+                selo_simulado(simulado=cfg["fontes"]["pedidos"] != "rpa")
                 serie = dados.serie(int(linha.cod_ibge), filtros["ano"], versao)
                 st.plotly_chart(grafico_chuva(serie.loc[serie.data.le(corte)], cfg["interface"]["altura_mini"],
                                 compacto=True, cfg=cfg, cultura=filtros["cultura"], limiar=filtros["limiar"]),
                                 key=f"mini_{linha.cod_ibge}", config={"displayModeBar": False})
                 abrir_raio_x(linha.cod_ibge, f"panorama_abrir_{linha.cod_ibge}", "Ver por quê →")
     with st.expander("Todos os municípios · mês selecionado"):
-        selo_simulado()
+        selo_simulado(simulado=cfg["fontes"]["pedidos"] != "rpa")
         st.dataframe(quadro.astype(object).where(pd.notna(quadro), "—")[[ "municipio", "uf", "perda_estimada_pct", "classe", "chuva_mm", "normal_mm", "pedidos"]].rename(
             columns={"municipio": "Município", "uf": "UF", "perda_estimada_pct": "Perda estimada (%)",
                      "classe": "Risco", "chuva_mm": "Chuva (mm)", "normal_mm": "Normal (mm)", "pedidos": "Pedidos"}),

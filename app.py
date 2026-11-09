@@ -7,7 +7,7 @@ from providers.config import carregar
 from state import dados, store
 from ui import tema
 from ui.componentes import fontes
-from ui.sidebar import renderizar as sidebar
+from features.sidebar import renderizar as sidebar
 
 
 def principal():

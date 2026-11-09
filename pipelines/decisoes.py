@@ -1,10 +1,13 @@
 """Auditoria local e rascunhos: nada é enviado automaticamente."""
 from datetime import datetime, timezone
+from email.message import EmailMessage
+from email.policy import SMTP
 import json
 import re
 from pathlib import Path
 
 from providers.config import carregar
+from providers.http import gravar_atomico
 
 CAMPOS = {"id", "tipo", "municipio", "decisao", "justificativa", "mensagem", "quando", "usuario"}
 
@@ -45,8 +48,8 @@ def registrar(decisao, caminho=None):
     # Valida o histórico antes de acrescentar; não sobrescreve decisões anteriores.
     listar(arquivo)
     arquivo.parent.mkdir(parents=True, exist_ok=True)
-    with arquivo.open("a", encoding="utf-8") as saida:
-        saida.write(json.dumps(registro, ensure_ascii=False, allow_nan=False) + "\n")
+    anterior = arquivo.read_bytes() if arquivo.exists() else b""
+    gravar_atomico(arquivo, anterior + (json.dumps(registro, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8"))
     return registro
 
 
@@ -79,6 +82,45 @@ def rascunho_convocacao(rec, rag=None):
         except Exception:
             pass  # Indisponibilidade do RAG mantém o rascunho local utilizável.
     return inicio + orientacao + "\nO atendimento não garante concessão nem pagamento do benefício."
+
+
+def salvar_decisao(rec, escolha, justificativa, mensagem, usuario, cfg=None):
+    """Só chamado após a revisão humana. Sem envio, destinatário ou dado pessoal."""
+    cfg = cfg or carregar()
+    if escolha == "rejeitada" and not justificativa.strip():
+        raise ValueError("Explique o motivo da rejeição.")
+    if not usuario.strip():
+        raise ValueError("Informe a identificação funcional do gestor.")
+    if ja_decidida(rec.id, cfg["paths"]["decisoes"]):
+        raise ValueError("Esta recomendação já foi decidida. Consulte o histórico.")
+    if escolha not in ("aprovada", "editada", "rejeitada"):
+        raise ValueError("Decisão inválida.")
+    registro = dict(id=rec.id, tipo=rec.tipo, municipio=rec.municipio, decisao=escolha,
+                    justificativa=justificativa.strip(), mensagem=mensagem.strip(), usuario=usuario.strip())
+    arquivo = None
+    if escolha != "rejeitada" and rec.tipo in ("convocacao", "mutirao_caf"):
+        if not mensagem.strip():
+            raise ValueError("Revise e preencha a mensagem antes de confirmar.")
+        arquivo = cfg["paths"]["convocacoes"] / f"{rec.id}.eml"
+        if arquivo.exists():
+            raise ValueError("Já existe uma mensagem para esta recomendação. Verifique o histórico local.")
+        eml = EmailMessage(policy=SMTP)
+        eml["Subject"] = f"Mandacaru | {rec.titulo}"
+        eml["Date"] = datetime.now(timezone.utc)
+        eml["X-Unsent"] = "1"
+        eml.set_content(mensagem.strip())
+        gravar_atomico(arquivo, eml.as_bytes())
+    try:
+        return registrar(registro, cfg["paths"]["decisoes"])
+    except Exception:
+        if arquivo is not None:
+            arquivo.unlink(missing_ok=True)
+        raise
+
+
+def selos(historico):
+    """Última decisão por ID, com autoria e data para cartões e mapa."""
+    return {r["id"]: dict(r) for r in historico}
 
 
 if __name__ == "__main__":

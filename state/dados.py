@@ -1,8 +1,5 @@
 """Orquestração com cache; regras de negócio continuam nos pipelines puros."""
 from copy import deepcopy
-from datetime import datetime, timezone
-from email.message import EmailMessage
-from email.policy import SMTP
 from threading import RLock
 
 import pandas as pd
@@ -11,8 +8,8 @@ import streamlit as st
 from pipelines import clima, decisoes, demanda, recomendacoes, risco, realidade
 from providers import dados_locais, genai, rpa
 from providers.config import carregar
-from providers.http import gravar_atomico
-from scripts.preparar_dados import baixar_clima
+from providers.atualizacao_clima import baixar_clima
+from state import store
 
 CFG = carregar()
 TTL = CFG["interface"]
@@ -85,13 +82,20 @@ def contexto(ano, cultura, ufs, servico, limiar, versao, corte=None):
     return {"quadro": quadro, "pedidos": sel, "demanda": dem, "recomendacoes": recs, "aviso": aviso}
 
 
-@st.cache_data(ttl=TTL["cache_rede_ttl_s"], show_spinner=False)
 def atualizar_municipio(codigo, ano, solicitacao):
     """Reutiliza a gravação atômica e a chamada ao provider da preparação A."""
+    chave = (codigo, ano, solicitacao)
+    if not store.iniciar_atualizacao(chave):
+        return False
     cfg = deepcopy(CFG)
     cfg["safra"]["anos_disponiveis"] = [ano]
     municipios = dados_locais.municipios()
-    baixar_clima(municipios.loc[municipios.cod_ibge.eq(codigo)], cfg, forcar=True)
+    try:
+        baixar_clima(municipios.loc[municipios.cod_ibge.eq(codigo)], cfg, forcar=True)
+    finally:
+        store.finalizar_atualizacao(chave)
+        for cache in (indicadores, serie, evolucao, contexto, validacao):
+            cache.clear()
     return True
 
 
@@ -115,34 +119,7 @@ def historico():
 
 
 def salvar_decisao(rec, escolha, justificativa, mensagem, usuario):
-    """Só chamado após a revisão humana. Sem envio, destinatário ou dado pessoal."""
-    if escolha == "rejeitada" and not justificativa.strip():
-        raise ValueError("Explique o motivo da rejeição.")
-    if not usuario.strip():
-        raise ValueError("Informe a identificação funcional do gestor.")
-    if decisoes.ja_decidida(rec.id):
-        raise ValueError("Esta recomendação já foi decidida. Consulte o histórico.")
-    registro = dict(id=rec.id, tipo=rec.tipo, municipio=rec.municipio, decisao=escolha,
-                    justificativa=justificativa.strip(), mensagem=mensagem.strip(), usuario=usuario.strip())
-    arquivo = None
-    if escolha != "rejeitada" and rec.tipo in ("convocacao", "mutirao_caf"):
-        if not mensagem.strip():
-            raise ValueError("Revise e preencha a mensagem antes de confirmar.")
-        arquivo = CFG["paths"]["convocacoes"] / f"{rec.id}.eml"
-        if arquivo.exists():
-            raise ValueError("Já existe uma mensagem para esta recomendação. Verifique o histórico local.")
-        eml = EmailMessage(policy=SMTP)
-        eml["Subject"] = f"Mandacaru | {rec.titulo}"
-        eml["Date"] = datetime.now(timezone.utc)
-        eml["X-Unsent"] = "1"
-        eml.set_content(mensagem.strip())
-        gravar_atomico(arquivo, eml.as_bytes())
-    try:
-        return decisoes.registrar(registro)
-    except Exception:
-        if arquivo is not None:
-            arquivo.unlink(missing_ok=True)
-        raise
+    return decisoes.salvar_decisao(rec, escolha, justificativa, mensagem, usuario, CFG)
 
 
 @st.cache_data(ttl=TTL["cache_dados_ttl_s"], show_spinner=False)
@@ -163,3 +140,8 @@ def validacao(cultura, versao):
 @st.cache_data(ttl=TTL["cache_dados_ttl_s"], show_spinner=False)
 def cobertura_pagamentos(ano, versao):
     return realidade._cobertura_pagamentos(ano, CFG)
+
+
+@st.cache_data(ttl=TTL["cache_rag_ttl_s"], show_spinner=False)
+def gerar_texto(sistema, payload):
+    return genai.gerar_texto(sistema, payload)

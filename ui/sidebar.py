@@ -4,11 +4,11 @@ from uuid import uuid4
 
 import streamlit as st
 
-from state import dados, store
+from state import store
 from ui.tema import NOMES_SERVICOS
 
 
-def atualizar(municipios, ano):
+def atualizar(municipios, ano, atualizar_municipio):
     solicitacao = uuid4().hex
     falhas, sucessos = [], []
     progresso = st.progress(0, text="Consultando o Open-Meteo…")
@@ -16,7 +16,7 @@ def atualizar(municipios, ano):
         for indice, m in enumerate(municipios.itertuples(index=False), 1):
             progresso.progress((indice - 1) / len(municipios), text=f"Atualizando {m.municipio}…")
             try:
-                dados.atualizar_municipio(int(m.cod_ibge), ano, solicitacao)
+                atualizar_municipio(int(m.cod_ibge), ano, solicitacao)
                 sucessos.append(m.municipio)
             except Exception:
                 # A preparação mantém o último snapshot íntegro em falhas de rede.
@@ -29,10 +29,11 @@ def atualizar(municipios, ano):
     st.rerun()
 
 
-def renderizar(cfg, municipios):
+def renderizar(cfg, municipios, atualizar_municipio):
     with st.sidebar:
         st.image(str(cfg["paths"]["municipios"].parents[1] / "assets/logo.svg"), width=48)
         st.markdown("### Mandacaru")
+        st.text_input("Identificação funcional do gestor", key="gestor", placeholder="Informe sua identificação funcional")
         st.selectbox("Safra", cfg["safra"]["anos_disponiveis"], key="ano",
                      format_func=lambda a: f"{a} — seca histórica" if a == cfg["safra"]["ano_demo_seca"] else str(a))
         st.multiselect("Estados", sorted(municipios.uf.unique()), key="ufs", help="Filtros válidos nas quatro abas.")
@@ -48,7 +49,7 @@ def renderizar(cfg, municipios):
             st.caption("Fonte dos pedidos: " + ("demonstração sintética, sem dados pessoais." if cfg["fontes"]["pedidos"] == "snapshot" else "planilha do robô de triagem."))
             if st.button("Atualizar dados do Open-Meteo", disabled=not store.obter("ufs"), width="stretch",
                          help="Renova a safra dos estados escolhidos. Pode levar alguns minutos. Preserva a normal 1991–2020."):
-                atualizar(municipios.loc[municipios.uf.isin(store.obter("ufs"))], store.obter("ano"))
+                atualizar(municipios.loc[municipios.uf.isin(store.obter("ufs"))], store.obter("ano"), atualizar_municipio)
             relatorio = store.obter("aviso_atualizacao")
             if relatorio:
                 st.caption(f"{relatorio['quando']} · {len(relatorio['sucessos'])} atualizados.")

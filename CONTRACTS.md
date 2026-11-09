@@ -182,3 +182,27 @@ opção de template. O gestor revisa o texto editável antes de baixar. O templa
 frases e usa somente os agregados. Cache por SHA-256 do JSON ordenado na sessão evita nova
 chamada para fatos iguais; `make_llm` mantém seu cache ligado e seu fallback configurado.
 Falhas de pacote, chave, rede ou geração retornam motivo curto e template, sem traceback.
+
+
+## Contratos da revisão Front-end
+
+- `providers.config.carregar(arquivo=None)`: cache LRU por caminho absoluto e `st_mtime_ns`;
+  devolve cópia profunda. Alterar o retorno não altera chamadas seguintes.
+- `providers.atualizacao_clima.baixar_clima`: mesma rotina atômica para CLI e app, sem Streamlit.
+  `state.dados.atualizar_municipio` não tem cache de resultado: guarda `(codigo, ano, solicitacao)`
+  em `store`, inclusive tentativa concluída com falha; nova solicitação permite tentar de novo.
+  Invalida indicadores, série, evolução, contexto e validação; mtime também compõe as chaves.
+- `pipelines.decisoes.salvar_decisao(rec, escolha, justificativa, mensagem, usuario, cfg=None)`:
+  exige gestor, situação válida, motivo na rejeição e mensagem para mutirão/convocação aprovados.
+  Impede ID repetido. `.eml` atômico sem destinatário, `X-Unsent: 1`; falha ao registrar desfaz o arquivo.
+  Log inteiro substituído atomicamente, preservando registros anteriores. Continua sendo um escritor local.
+- `pipelines.decisoes.selos(historico)` retorna mapa ID → registro completo; `editada` aparece como
+  “Aprovada com ajustes”. Mapa considera aprovadas/editadas da safra selecionada, sem mudar risco.
+- `gestor` inicia vazio em `store`; UI desabilita decisões e pipeline também valida a identidade.
+  Features fornecem callbacks de gravação/rascunho; UI recebe configuração, dados e callbacks.
+- Dispersão/placar usam UF e safra selecionadas; limiar do Panorama é exploratório, classes oficiais intactas.
+  Gráficos de contagem recebem DataFrames `categoria, quantidade`; vazio retorna `None`.
+- `formatacao.numero/percentual` são funções puras compartilhadas. `resumo.fatos_exibicao` cria cópia
+  com floats em pt-BR; fatos originais permanecem numéricos para hash, LLM e checagem de números.
+- Aplicação independente usa snapshots e templates; genAI e RPA são integrações opcionais.
+  Chave de Gemini no deploy: secret raiz `GEMINI_API_KEY`; pacote/índice genAI continuam opcionais.

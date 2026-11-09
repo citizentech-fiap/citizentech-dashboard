@@ -4,17 +4,14 @@ from html import escape
 import streamlit as st
 import pandas as pd
 
+from formatacao import percentual
+
 from state import store
 from ui.tema import CORES, badge_html
 
 
-def percentual(valor, casas=1):
-    return f"{valor:.{casas}f}".replace(".", ",") + "%" if pd.notna(valor) else "—"
-
-
-def selo_simulado(texto="simulado"):
-    from providers.config import carregar
-    if carregar()["fontes"]["pedidos"] != "rpa":
+def selo_simulado(texto="simulado", simulado=True):
+    if simulado:
         st.html(f'<span class="selo-simulado" title="Pedidos de agricultores são simulados: dado pessoal não é público (LGPD). Em operação, vêm do robô de triagem.">{escape(texto)}</span>')
 
 
@@ -33,15 +30,14 @@ def abrir_raio_x(codigo, chave, rotulo="Ver evidências no raio-x →"):
     st.button(rotulo, key=chave, on_click=store.abrir_municipio, args=(int(codigo),))
 
 
-def cartao_recomendacao(rec, cfg, filtros):
-    from pipelines.recomendacoes import ROTULOS_TIPOS
+def cartao_recomendacao(rec, cfg, filtros, rotulo, servicos, decisao=None):
     from ui.acoes import renderizar as acoes, sugestao
 
     with st.container(border=True):
-        st.caption(ROTULOS_TIPOS[rec.tipo])
+        st.caption(rotulo)
         st.subheader(rec.municipio)
         badge_risco(rec.evidencias["classe"])
-        selo_simulado()
+        selo_simulado(simulado=cfg["fontes"]["pedidos"] != "rpa")
         ev = rec.evidencias
         sinal = (f"Perda estimada {percentual(ev['perda_estimada_pct'], 0)}" if ev.get("estimavel", True)
                  else f"Chuva {percentual(ev['anomalia_pct'], 0)} × normal")
@@ -51,7 +47,12 @@ def cartao_recomendacao(rec, cfg, filtros):
             st.caption("Perda estimada a partir de 1º de março")
         campos = sugestao(rec, cfg)
         st.caption(f"Sugestão: seg {campos['data']:%d/%m} · {campos['local']} · {campos['plano']}")
-        acoes(rec, cfg, filtros)
+        if decisao:
+            situacao = {"aprovada": "Aprovada", "editada": "Aprovada com ajustes", "rejeitada": "Rejeitada"}[decisao["decisao"]]
+            quando = pd.Timestamp(decisao["quando"]).tz_convert("America/Recife").strftime("%d/%m/%Y %H:%M")
+            st.success(f"{situacao} · {decisao['usuario']} · {quando}")
+        else:
+            acoes(rec, cfg, filtros, servicos)
         with st.expander("Ver detalhes"):
             st.write(rec.justificativa)
             st.caption(rec.acao_sugerida)
@@ -70,7 +71,7 @@ def fontes():
 
 
 
-def como_calculamos(cfg, filtros):
+def como_calculamos(cfg, filtros, placar):
     with st.expander("Como calculamos"):
         aviso_modelo()
         st.write("A aproximação compara ISNA do ano e da normal, sem balanço de solo ou fenologia, "
@@ -88,21 +89,22 @@ def como_calculamos(cfg, filtros):
         st.caption(f"Cultura: {filtros['cultura']} · limiar de triagem: {filtros['limiar']}%. "
                    "A abertura usa snapshots locais. A atualização renova a safra das UFs selecionadas "
                    "e preserva a normal 1991–2020.")
-        validacao_retrospectiva(cfg, filtros)
+        validacao_retrospectiva(cfg, filtros, placar)
 
 
-def validacao_retrospectiva(cfg, filtros):
-    from state import dados
+def validacao_retrospectiva(cfg, filtros, placar):
     from ui.graficos import dispersao_validacao
-    try:
-        placar = dados.validacao(filtros["cultura"], dados.versao_snapshots())
-    except (OSError, ValueError):
+    if placar is None:
         st.warning("Validação retrospectiva indisponível; recupere os dados locais.")
         return
-    st.markdown("### Estimado × real · 2012–2025")
+    st.markdown(f"### Estimado × real · safra {filtros['ano']}")
     st.write("O modelo usa só chuva e demanda hídrica. Perdas por pragas, preço ou área não plantada não aparecem. "
              "A referência do placar é a perda de produção do IBGE, nunca os pagamentos.")
-    st.plotly_chart(dispersao_validacao(placar["dados"], cfg["interface"]["altura_chuva"]), key="validacao_retrospectiva")
+    figura = dispersao_validacao(placar["dados"], cfg["interface"]["altura_chuva"])
+    if figura is None:
+        st.info("Sem pares estimado × real disponíveis nesta safra e UF.")
+        return
+    st.plotly_chart(figura, key="validacao_retrospectiva")
     matriz = placar["matriz"]
     st.markdown(f"**Placar no critério de {cfg['risco']['criterio_garantia_safra']}%** "
                 "(cada ponto é um município em uma safra)")

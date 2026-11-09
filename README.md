@@ -140,6 +140,17 @@ flowchart LR
 `providers/` e `pipelines/` não importam Streamlit: rodam e são testados sem a interface
 (`python -m pipelines.risco`, `python -m pipelines.recomendacoes`, `python -m pipelines.realidade`).
 
+As regras de dependência entre camadas são verificadas por `tests/test_arquitetura.py` (leitura dos imports com
+`ast`): `ui/` não importa providers, pipelines nem `state.dados` — recebe dados prontos e *callbacks* (por exemplo,
+`ui.acoes.Servicos(salvar, rascunhar)`) das telas de `features/`; `features/` não importa providers nem scripts.
+`formatacao.py`, na raiz, é o único utilitário compartilhado por todas as camadas: funções puras de número e
+porcentagem em pt-BR (vírgula decimal), sem dependências.
+
+Cache: `providers.config.carregar()` lê o YAML uma vez por versão do arquivo (cache por caminho e data de
+modificação, devolvendo cópia); `st.cache_data` só envolve funções sem efeito colateral. A atualização do
+Open-Meteo (`providers/atualizacao_clima.py`, a mesma rotina do script de preparação) não é cacheada: uma guarda
+na sessão evita repetir a mesma solicitação e, ao terminar, só os caches que dependem do clima são limpos.
+
 ## Como usar (sem treinamento)
 
 O painel foi desenhado para quem nunca o viu: as abas são os passos, e a decisão principal leva **2 cliques**.
@@ -153,15 +164,19 @@ O painel foi desenhado para quem nunca o viu: as abas são os passos, e a decis�
 3. **"3 · O que fazer"** — as 5 ações mais urgentes, na ordem do processo real (vistoria → mutirão do CAF →
    convocação). Cada cartão já mostra a sugestão (data, local e plano): **Aprovar** é 1 clique; **Ajustar** abre o
    formulário preenchido; **Recusar** exige o motivo. Convocações mostram a mensagem ao agricultor para revisão
-   antes de confirmar. Tudo vai para um registro de auditoria ("Decisões já tomadas").
+   antes de confirmar. Decidir exige a identificação funcional do gestor (barra lateral); sem ela, os botões ficam
+   desabilitados. A decisão volta para o painel: o cartão passa a mostrar o selo (Aprovada, Aprovada com ajustes ou
+   Rejeitada, por quem e quando) sem os botões, e o mapa da aba 1 indica no hover os municípios com ação aprovada.
+   Tudo vai para um registro de auditoria ("Decisões já tomadas"), com um gráfico das decisões por situação.
 4. **"Resumo da semana"** — um clique gera, com IA (Gemini, pelo módulo genAI), o resumo para a coordenação:
    situação dos municípios, ações pendentes, decisões da semana e as três próximas ações. A IA recebe **só os
    números do painel** ("Fatos usados"); todo número do texto é conferido contra esses fatos, e um número que não
    está lá gera aviso. O gestor edita o texto e baixa em .txt. Sem chave ou sem rede, sai um resumo automático
-   sem IA. (O chat para o agricultor tirar dúvidas fica no portal do robô, onde está quem tem a dúvida.)
+   sem IA. Um gráfico mostra quantos municípios estão em cada classe de risco nos filtros escolhidos. (O chat para o agricultor tirar dúvidas fica no portal do robô, onde está quem tem a dúvida.)
 
-Na barra lateral ficam só **Safra** e **Estados**; cultura, limiar, serviço e atualização dos dados estão em
-"Ajustes avançados". O método fica em "Como calculamos". O layout funciona também na largura de celular.
+Na barra lateral ficam **Identificação funcional do gestor**, **Safra** e **Estados**; cultura, limiar, serviço e
+atualização dos dados estão em "Ajustes avançados". O limiar de perda é exploratório: muda a contagem de municípios
+em alerta na aba 1 e as ações sugeridas, sem alterar o critério oficial do Garantia-Safra (perda de 40%, em `config.yaml`). O método fica em "Como calculamos". O layout funciona também na largura de celular.
 
 | Por quê: o que aconteceu de fato em Patos (2012) | O que fazer: ações para aprovar |
 |---|---|
@@ -207,7 +222,7 @@ garantia_safra e pedidos).
 de convocação usam o Gemini e o RAG. Com o robô `citizentech-rpa` ao lado, troque `fontes.pedidos` para `rpa` no
 [config.yaml](config.yaml) para ler a planilha viva dele.
 
-**Testes:** `python -m unittest discover -s tests` (66 testes: codificação UTF-8 dos arquivos, providers sem rede
+**Testes:** `python -m unittest discover -s tests` (74 testes: regras de dependência entre camadas, codificação UTF-8 dos arquivos, providers sem rede
 — incluindo SIDRA e um ZIP sintético do Garantia-Safra —, modelo hídrico, risco e replay, validação contra o dado
 real, demanda, recomendações, decisões, resumo semanal com checagem de números e fluxos da interface).
 
@@ -230,3 +245,26 @@ real, demanda, recomendações, decisões, resumo semanal com checagem de númer
 | [citizentech-rpa](https://github.com/citizentech-fiap/citizentech-rpa) | AI for RPA | robô que coleta as Cartas de Serviço e faz a pré-triagem dos pedidos |
 | [citizentech-genai](https://github.com/citizentech-fiap/citizentech-genai) | Generative AI | assistente RAG com citação das fontes; aqui, resumo semanal e convocações |
 | **citizentech-dashboard** (este) | Front-end | painel de decisão do gestor |
+
+
+
+## Deploy
+
+1. Na conta da equipe no Streamlit Community Cloud, selecione **Create app**, o repositório
+   `citizentech-fiap/citizentech-dashboard`, a branch da entrega e **`app.py`** como arquivo principal.
+2. Em **Advanced settings**, selecione **Python 3.14** (ambiente local validado: 3.14.7).
+   `requirements.txt` fixa as oito dependências nas versões instaladas; não precisa instalar os projetos vizinhos.
+3. Os snapshots versionados em `data/` permitem abrir as quatro abas somente com este repositório.
+   Sem RPA, use `fontes.pedidos: snapshot`; se a fonte RPA estiver selecionada e ausente, o aviso
+   informa o fallback sintético. Sem genAI, resumo e convocação usam templates com aviso.
+4. Para a integração opcional Gemini, configure no campo **Secrets**, na raiz do TOML:
+   `GEMINI_API_KEY = "sua-chave"`. Secrets da raiz viram variáveis de ambiente.
+   A chave sozinha não instala `citizen_rag`: neste deploy independente a IA permanece no fallback;
+   habilitar IA exige disponibilizar também o pacote opcional e seu índice. Não publique a chave no Git.
+5. Clique **Deploy**, confira as quatro abas e preencha o link abaixo. Decisões e `.eml` são locais
+   e podem se perder ao reiniciar/reimplantar; exporte o CSV. Persistência multiusuário exige banco externo.
+
+**Link do painel:** `[PREENCHER APÓS O DEPLOY]`.
+
+Referências: [deploy e Python](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/deploy)
+ e [secrets como ambiente](https://docs.streamlit.io/develop/concepts/connections/secrets-management).

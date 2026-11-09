@@ -2,11 +2,12 @@
 import hashlib
 import json
 
+import pandas as pd
 import streamlit as st
 
 from pipelines import resumo
-from providers import genai
 from state import dados, store
+from ui.graficos import barras_contagens
 
 SYSTEM = ("Você escreve o resumo semanal para a coordenação do Garantia-Safra. "
           "Use SOMENTE os fatos em JSON. Não invente números nem relações causais. "
@@ -31,12 +32,19 @@ def renderizar(ctx, cfg, filtros):
         return
     fatos = resumo.fatos(ctx['quadro'], ctx['demanda'], ctx['recomendacoes'], historico,
                          cfg, filtros['ano'], corte, real)
+    contagens = pd.DataFrame(fatos["municipios_por_classe"].items(), columns=["categoria", "quantidade"])
+    figura = barras_contagens(contagens, cfg["interface"]["altura_barras"])
+    if figura is not None:
+        st.caption("Municípios por classe de risco · filtros selecionados")
+        st.plotly_chart(figura, key="grafico_resumo")
+    else:
+        st.info("Sem municípios para resumir.")
     payload = json.dumps(fatos, ensure_ascii=False, sort_keys=True, allow_nan=False)
     chave = hashlib.sha256(payload.encode('utf-8')).hexdigest()
     cache = dict(store.obter('resumos', {}))
     if st.button("Gerar resumo da semana", key="gerar_resumo", type="primary") and chave not in cache:
         with st.spinner("Preparando o resumo…"):
-            texto, motivo = genai.gerar_texto(SYSTEM, payload)
+            texto, motivo = dados.gerar_texto(SYSTEM, payload)
         cache[chave] = dict(texto=texto or resumo.template(fatos), ia=bool(texto), motivo=motivo)
         store.definir('resumos', cache)
     registro = cache.get(chave)
@@ -63,4 +71,4 @@ def renderizar(ctx, cfg, filtros):
         store.definir('ultimo_resumo', texto)
         st.download_button("Baixar .txt", texto.encode('utf-8'), file_name=f"resumo-{filtros['ano']}.txt", mime="text/plain")
     with st.expander("Fatos usados"):
-        st.json(fatos)
+        st.json(resumo.fatos_exibicao(fatos))

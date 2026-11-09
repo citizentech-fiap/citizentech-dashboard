@@ -2,8 +2,12 @@
 import pandas as pd
 import streamlit as st
 
+from pipelines.decisoes import selos
+from pipelines.recomendacoes import ROTULOS_TIPOS
 from state import dados, store
+from ui.acoes import Servicos
 from ui.componentes import cartao_recomendacao
+from ui.graficos import barras_contagens
 
 
 def fila_pendente(ctx, codigo=None):
@@ -20,13 +24,15 @@ def fila_pendente(ctx, codigo=None):
 
 def acoes_municipio(ctx, cfg, filtros, codigo, nome):
     st.subheader(f"O que fazer em {nome}")
-    fila, _ = fila_pendente(ctx, codigo)
+    fila, historico = fila_pendente(ctx, codigo)
     if fila is None:
         return
     if not fila:
         st.success("Nenhuma ação aguardando decisão neste município.")
+    aviso_gestor(fila)
     for rec in fila:
-        cartao_recomendacao(rec, cfg, filtros)
+        cartao(rec, cfg, filtros)
+    decididas(ctx, cfg, filtros, historico, codigo)
 
 
 def renderizar(ctx, cfg, filtros):
@@ -40,8 +46,9 @@ def renderizar(ctx, cfg, filtros):
         st.caption("Pendências de CAF ainda podem precisar de atendimento.")
     if not fila:
         st.success("Tudo em dia: nenhuma ação aguardando sua decisão.")
+    aviso_gestor(fila)
     for rec in fila[:store.obter("acoes_visiveis")]:
-        cartao_recomendacao(rec, cfg, filtros)
+        cartao(rec, cfg, filtros)
     if len(fila) > store.obter("acoes_visiveis"):
         tamanho = cfg["interface"]["recomendacoes_por_pagina"]
         st.button(f"Mostrar mais {tamanho}", key="mostrar_mais", on_click=store.mostrar_mais, args=(tamanho,))
@@ -49,7 +56,10 @@ def renderizar(ctx, cfg, filtros):
         municipios = set(ctx["quadro"].municipio)
         registros = [r for r in historico if r["id"].endswith(f"-{filtros['ano']}") and r["municipio"] in municipios]
         st.caption("Histórico da safra e dos estados selecionados, incluindo ações que já saíram da fila.")
+        decididas(ctx, cfg, filtros, historico)
         if registros:
+            contagens = pd.DataFrame(registros).groupby("decisao").size().reset_index(name="quantidade").rename(columns={"decisao": "categoria"})
+            st.plotly_chart(barras_contagens(contagens, cfg["interface"]["altura_barras"]), key="grafico_decisoes")
             tabela = pd.DataFrame(registros).iloc[::-1]
             st.dataframe(_tabela_legivel(tabela), hide_index=True, width="stretch")
             st.download_button("Baixar histórico (CSV)", tabela.to_csv(index=False).encode("utf-8-sig"),
@@ -70,3 +80,20 @@ def _tabela_legivel(tabela):
         "Por quem": tabela["usuario"],
         "Motivo / justificativa": tabela["justificativa"].fillna("").str.split("\n").str[0],
     })
+
+
+def cartao(rec, cfg, filtros, decisao=None):
+    servicos = Servicos(salvar=dados.salvar_decisao, rascunhar=dados.rascunhar)
+    cartao_recomendacao(rec, cfg, filtros, ROTULOS_TIPOS[rec.tipo], servicos, decisao)
+
+
+def decididas(ctx, cfg, filtros, historico, codigo=None):
+    registros = selos(historico)
+    for rec in ctx["recomendacoes"]:
+        if rec.id in registros and (codigo is None or rec.cod_ibge == codigo):
+            cartao(rec, cfg, filtros, registros[rec.id])
+
+
+def aviso_gestor(fila):
+    if fila and not store.obter("gestor", "").strip():
+        st.info("Para aprovar, ajustar ou recusar, preencha a identificação funcional do gestor na barra lateral.")

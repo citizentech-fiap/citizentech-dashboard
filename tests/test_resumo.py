@@ -73,10 +73,10 @@ class TestResumo(unittest.TestCase):
     def test_selo_so_para_simulacao(self):
         from ui.componentes import selo_simulado
         with patch('providers.config.carregar', return_value=self.cfg), patch('ui.componentes.st.html') as html:
-            selo_simulado()
+            selo_simulado(simulado=self.cfg['fontes']['pedidos'] != 'rpa')
             self.assertIn('simulado', html.call_args.args[0])
             self.assertIn('LGPD', html.call_args.args[0])
             html.reset_mock()
             self.cfg['fontes']['pedidos'] = 'rpa'
-            selo_simulado()
+            selo_simulado(simulado=self.cfg['fontes']['pedidos'] != 'rpa')
             html.assert_not_called()
