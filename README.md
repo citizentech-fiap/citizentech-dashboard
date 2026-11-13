@@ -261,10 +261,8 @@ real, demanda, recomendações, decisões, resumo semanal com checagem de númer
    `GEMINI_API_KEY = "sua-chave"`. Secrets da raiz viram variáveis de ambiente.
    A chave sozinha não instala `citizen_rag`: neste deploy independente a IA permanece no fallback;
    habilitar IA exige disponibilizar também o pacote opcional e seu índice. Não publique a chave no Git.
-5. Clique **Deploy**, confira as quatro abas e preencha o link abaixo. Decisões e `.eml` são locais
+5. Clique **Deploy** e confira as quatro abas. Decisões e `.eml` são locais
    e podem se perder ao reiniciar/reimplantar; exporte o CSV. Persistência multiusuário exige banco externo.
-
-**Link do painel:** `[PREENCHER APÓS O DEPLOY]`.
 
 Referências: [deploy e Python](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/deploy)
  e [secrets como ambiente](https://docs.streamlit.io/develop/concepts/connections/secrets-management).
