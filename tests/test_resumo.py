@@ -58,7 +58,10 @@ class TestResumo(unittest.TestCase):
         pasta = str(self.cfg['paths']['genai_path'])
         sys.path.insert(0, pasta)
         self.addCleanup(sys.path.remove, pasta)
-        from citizen_rag.llm import StubLLM, UnavailableLLM
+        try:
+            from citizen_rag.llm import StubLLM, UnavailableLLM
+        except ModuleNotFoundError:
+            self.skipTest("integração opcional: clone o citizentech-genai na pasta ../genAI para rodar este teste")
         stub = StubLLM('Resumo da safra 2026.')
         with patch('citizen_rag.llm.make_llm', return_value=stub) as criar:
             self.assertEqual(genai.gerar_texto('sistema', 'fatos'), ('Resumo da safra 2026.', ''))

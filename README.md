@@ -27,6 +27,66 @@ ou rejeita**. O painel não decide sozinho: a perda estimada é uma aproximaçã
 fluxo humano no centro. Para não pedir confiança cega, o painel mostra **o que aconteceu de fato** em cada safra
 (produção do IBGE e pagamentos do Garantia-Safra) e o **placar do modelo** contra esses dados oficiais.
 
+## Início rápido
+
+Requisitos: Python 3.11 ou mais novo e Git. Os dados (clima, mapas, produção, pagamentos agregados e pedidos
+simulados) já estão em `data/`, então o painel abre só com este repositório e sem chave de API.
+
+**Windows (PowerShell)**
+```powershell
+git clone https://github.com/citizentech-fiap/citizentech-dashboard.git dashboard
+cd dashboard
+python -m venv .venv
+.venv\Scripts\Activate.ps1          # se o PowerShell bloquear: Set-ExecutionPolicy -Scope Process Bypass
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+**macOS / Linux**
+```bash
+git clone https://github.com/citizentech-fiap/citizentech-dashboard.git dashboard
+cd dashboard
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+### O que você deve ver
+
+O navegador abre em `http://localhost:8501` com as abas **1 · Onde está pior**, **2 · Por quê**, **3 · O que
+fazer** e **Resumo da semana**, já na safra de 2012: o mapa dos 23 municípios, quase todos em vermelho. Para
+aprovar ações na aba 3, preencha antes a **Identificação funcional do gestor** na barra lateral. Sem o módulo de IA
+ao lado, o "Resumo da semana" e as convocações usam texto pronto, com aviso.
+
+O mapa de fundo precisa de internet; sem ela, os municípios aparecem sobre fundo branco.
+
+### Testes e pipelines sem interface
+
+```bash
+python -m unittest discover -s tests          # 74 testes; 1 é pulado se o genAI não estiver ao lado
+python -m pipelines.realidade                 # imprime o placar estimado × real, sem abrir o painel
+```
+
+Os testes cobrem: regras de dependência entre camadas, codificação UTF-8, providers sem rede (incluindo SIDRA e um
+ZIP sintético do Garantia-Safra), modelo hídrico, risco e replay, validação contra o dado real, demanda,
+recomendações, decisões, resumo semanal com checagem de números e fluxos da interface (`AppTest`).
+
+### Atualizar os dados reais (opcional, precisa de internet)
+
+`python scripts/preparar_dados.py` baixa tudo de novo. `--forcar` renova tudo; `--etapas` escolhe entre malhas,
+clima, normal, pam, garantia_safra e pedidos.
+
+### Integração com os outros módulos (opcional)
+
+- **IA:** com o `citizentech-genai` clonado ao lado, na pasta `../genAI`, rode `pip install -e ../genAI` e coloque a
+  chave do Gemini no `.env` do genAI. O "Resumo da semana" e os rascunhos de convocação passam a usar o Gemini e o
+  assistente RAG.
+- **Pedidos ao vivo:** com o `citizentech-rpa` clonado ao lado, na pasta `../RPA`, troque `fontes.pedidos` para `rpa`
+  no [config.yaml](config.yaml). O painel passa a ler a planilha viva do robô.
+
+Os comandos para montar os quatro juntos estão em [Rodar os quatro juntos](#rodar-os-quatro-juntos).
+
 ## Dados reais × simulados
 
 Tudo o que descreve os municípios vem de **fontes públicas reais**. Só os pedidos individuais dos agricultores são
@@ -203,29 +263,6 @@ o dado oficial**, com acertos e erros expostos; transparência sobre o que é si
 testes automatizados das camadas de dados e da interface (`streamlit.testing.AppTest`); storytelling do panorama
 ao detalhe e à decisão.
 
-## Como executar
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate            # Linux/Mac: source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-Os snapshots de clima, mapa, produção, pagamentos (agregados) e pedidos já estão em `data/`: o painel abre sem internet (o mapa base precisa de
-internet; sem ela, os municípios aparecem sobre fundo branco). Para baixar de novo os dados reais:
-`python scripts/preparar_dados.py` (`--forcar` renova tudo; `--etapas` escolhe entre malhas, clima, normal, pam,
-garantia_safra e pedidos).
-
-**Opcional — IA e pedidos ao vivo:** com o repositório `citizentech-genai` clonado ao lado
-(`pip install -e ../genAI`) e a chave do Gemini no `.env` (fora do git), o "Resumo da semana" e os rascunhos
-de convocação usam o Gemini e o RAG. Com o robô `citizentech-rpa` ao lado, troque `fontes.pedidos` para `rpa` no
-[config.yaml](config.yaml) para ler a planilha viva dele.
-
-**Testes:** `python -m unittest discover -s tests` (74 testes: regras de dependência entre camadas, codificação UTF-8 dos arquivos, providers sem rede
-— incluindo SIDRA e um ZIP sintético do Garantia-Safra —, modelo hídrico, risco e replay, validação contra o dado
-real, demanda, recomendações, decisões, resumo semanal com checagem de números e fluxos da interface).
-
 ## Limitações
 
 - A perda estimada é uma **aproximação** do indicador hídrico (sem balanço de solo nem fases da cultura) e não
@@ -239,14 +276,88 @@ real, demanda, recomendações, decisões, resumo semanal com checagem de númer
 - A produção do IBGE (PAM) sai no ano seguinte: a safra 2026 ainda não tem perda real.
 - Registro de decisões local (um gestor por vez); num uso real, banco de dados com autenticação.
 
-## Parte da solução CitizenTech
-| Repositório | Disciplina | Papel |
-|---|---|---|
-| [citizentech-rpa](https://github.com/citizentech-fiap/citizentech-rpa) | AI for RPA | robô que coleta as Cartas de Serviço e faz a pré-triagem dos pedidos |
-| [citizentech-genai](https://github.com/citizentech-fiap/citizentech-genai) | Generative AI | assistente RAG com citação das fontes; aqui, resumo semanal e convocações |
-| **citizentech-dashboard** (este) | Front-end | painel de decisão do gestor |
+## Como os quatro repositórios se conectam
 
+O CitizenTech é uma solução só, dividida em quatro repositórios da organização
+[citizentech-fiap](https://github.com/citizentech-fiap), um por disciplina. **Cada módulo roda sozinho**, com dados
+de exemplo já versionados. Juntos, eles trocam dados assim:
 
+```mermaid
+flowchart LR
+    GOVBR[gov.br<br/>Cartas de Serviço] --> RPA[citizentech-rpa<br/>robô de pré-triagem]
+    RPA -- "Cartas coletadas<br/>(servicos.jsonl)" --> GEN[citizentech-genai<br/>assistente RAG]
+    GEN -- "resposta ao agricultor<br/>(rag.answer)" --> RPA
+    RPA -- "pedidos triados<br/>(controle.xlsx)" --> DASH[citizentech-dashboard<br/>painel do gestor]
+    GEN -- "rascunho da convocação<br/>(rag.answer)" --> DASH
+    GOVERN[citizentech-governanca] -. confere .-> RPA
+    GOVERN -. confere .-> GEN
+    GOVERN -. confere .-> DASH
+```
+
+| Repositório | Disciplina | O que faz | Precisa dos outros? |
+|---|---|---|---|
+| [`citizentech-rpa`](https://github.com/citizentech-fiap/citizentech-rpa) | AI for RPA | coleta as Cartas de Serviço do gov.br e faz a pré-triagem dos pedidos | não; com o genAI ao lado, redige as respostas com o assistente (sem ele, usa template) |
+| [`citizentech-genai`](https://github.com/citizentech-fiap/citizentech-genai) | Generative AI | assistente que responde citando as Cartas de Serviço | não; traz uma cópia do corpus coletado pelo robô |
+| [`citizentech-dashboard`](https://github.com/citizentech-fiap/citizentech-dashboard) **(este)** | Front-end | painel de decisão do gestor (Mandacaru) | não; com genAI e RPA ao lado, usa o assistente e os pedidos do robô (sem eles, snapshots e templates) |
+| [`citizentech-governanca`](https://github.com/citizentech-fiap/citizentech-governanca) | Governança em IA | documentos e scripts que verificam os três módulos | **sim**: os três clonados ao lado |
+
+**Para integrar, o nome das pastas importa.** Os módulos se encontram por caminhos relativos (`../genAI`, `../RPA`,
+`../dashboard`). Um `git clone` sem nome de pasta cria `citizentech-genai`, e a integração não encontra o módulo.
+Os comandos da seção [Rodar os quatro juntos](#rodar-os-quatro-juntos) já usam os nomes certos.
+
+## Rodar os quatro juntos
+
+Para a integração completa, os quatro repositórios ficam lado a lado numa mesma pasta e usam **um único ambiente
+Python, na pasta de cima**. Assim, o robô e o painel enxergam o pacote do assistente, e a governança roda os testes
+dos três com o mesmo Python.
+
+```
+CitizenTech/
+├── .venv/        ambiente compartilhado pelos quatro
+├── RPA/
+├── genAI/
+├── dashboard/
+└── governanca/
+```
+
+**Windows (PowerShell)**
+```powershell
+mkdir CitizenTech; cd CitizenTech
+git clone https://github.com/citizentech-fiap/citizentech-rpa.git RPA
+git clone https://github.com/citizentech-fiap/citizentech-genai.git genAI
+git clone https://github.com/citizentech-fiap/citizentech-dashboard.git dashboard
+git clone https://github.com/citizentech-fiap/citizentech-governanca.git governanca
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e genAI -r RPA/requirements.txt -r dashboard/requirements.txt -r governanca/requirements.txt
+copy genAI\.env.example genAI\.env      # opcional: preencha GEMINI_API_KEY
+```
+
+**macOS / Linux**
+```bash
+mkdir CitizenTech && cd CitizenTech
+git clone https://github.com/citizentech-fiap/citizentech-rpa.git RPA
+git clone https://github.com/citizentech-fiap/citizentech-genai.git genAI
+git clone https://github.com/citizentech-fiap/citizentech-dashboard.git dashboard
+git clone https://github.com/citizentech-fiap/citizentech-governanca.git governanca
+python3 -m venv .venv
+source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # só no Linux: evita baixar vários GB de CUDA
+pip install -e genAI -r RPA/requirements.txt -r dashboard/requirements.txt -r governanca/requirements.txt
+cp genAI/.env.example genAI/.env        # opcional: preencha GEMINI_API_KEY
+```
+
+Com o ambiente ativado, cada módulo roda de dentro da própria pasta:
+
+| Para | Comando |
+|---|---|
+| Portal do robô (enviar pedido, painel do robô, chat do assistente) | `cd RPA` → `streamlit run app/streamlit_app.py` |
+| Painel do gestor | `cd dashboard` → `streamlit run app.py` |
+| Gate de governança (roda as três suítes de teste) | `cd governanca` → `python scripts/gate.py` |
+
+A chave do Gemini é gratuita em https://aistudio.google.com/apikey. Ela fica no `.env` do genAI (o assistente também
+lê o `.env` do RPA). O `.env` está no `.gitignore` e não vai para o repositório. Sem chave, tudo funciona: o
+assistente se abstém, e o robô e o painel usam textos prontos.
 
 ## Deploy
 
