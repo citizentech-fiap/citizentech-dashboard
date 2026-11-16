@@ -8,6 +8,8 @@ Global Solution 2026 · FIAP · **Front-end e Mobile Development em Sistemas de 
 | Ricardo de Paiva Melo | RM565522 |
 | Jonas Alaf | RM566479 |
 
+**Vídeo de apresentação:** https://youtu.be/k0vJKOhLW9o
+
 ![Onde está pior: a seca de 2012, com a perda real do IBGE ao lado da estimada](docs/img/onde-esta-pior.jpg)
 
 ## O problema
